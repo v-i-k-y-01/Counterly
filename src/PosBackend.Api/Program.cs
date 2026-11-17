@@ -136,6 +136,10 @@ builder.Services.AddCors(options =>
 // ==========================================
 // 5. WEB API & SWAGGER / OPENAPI DOCUMENTATION
 // ==========================================
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+});
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -187,6 +191,7 @@ else if (app.Configuration.GetValue<bool>("ApplyMigrations") ||
 }
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
+app.UseResponseCompression();
 app.UseCors(CorsPolicyName);
 
 if (app.Environment.IsDevelopment() || 

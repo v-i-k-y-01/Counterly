@@ -28,5 +28,9 @@ public class SaleItemConfiguration : IEntityTypeConfiguration<SaleItem>
         builder.Property(saleItem => saleItem.Subtotal)
             .HasColumnType("numeric(18,2)")
             .IsRequired();
+
+        // Performance indexes: accelerates top products report and sale item joins
+        builder.HasIndex(saleItem => saleItem.ProductId);
+        builder.HasIndex(saleItem => saleItem.SaleId);
     }
 }

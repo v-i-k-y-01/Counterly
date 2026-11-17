@@ -33,6 +33,9 @@ public class SaleConfiguration : IEntityTypeConfiguration<Sale>
         builder.Property(sale => sale.StoreId)
             .IsRequired();
 
+        // Performance index: accelerates sales history filtering and daily revenue aggregations
+        builder.HasIndex(sale => new { sale.StoreId, sale.CreatedAt });
+
         builder.HasOne(sale => sale.Store)
             .WithMany(store => store.Sales)
             .HasForeignKey(sale => sale.StoreId)

@@ -33,6 +33,10 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.HasIndex(product => new { product.StoreId, product.Sku })
             .IsUnique();
 
+        // Performance indexes: accelerates product catalog filtering by category and sorting/lookup by name
+        builder.HasIndex(product => new { product.StoreId, product.CategoryId });
+        builder.HasIndex(product => new { product.StoreId, product.Name });
+
         builder.HasOne(product => product.Store)
             .WithMany(store => store.Products)
             .HasForeignKey(product => product.StoreId)

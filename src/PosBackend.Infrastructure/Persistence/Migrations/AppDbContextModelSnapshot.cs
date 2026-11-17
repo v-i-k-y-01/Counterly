@@ -79,6 +79,10 @@ namespace PosBackend.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CategoryId");
 
+                    b.HasIndex("StoreId", "CategoryId");
+
+                    b.HasIndex("StoreId", "Name");
+
                     b.HasIndex("StoreId", "Sku")
                         .IsUnique();
 
@@ -112,7 +116,7 @@ namespace PosBackend.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CashierId");
 
-                    b.HasIndex("StoreId");
+                    b.HasIndex("StoreId", "CreatedAt");
 
                     b.ToTable("Sales", (string)null);
                 });
