@@ -1,0 +1,59 @@
+name: CI - Pull Request Verification
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend-validation:
+    name: Backend Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+        continue-on-error: true
+
+      - name: Install .NET 10 (Direct Fallback if needed)
+        run: |
+          if ! command -v dotnet &> /dev/null || ! dotnet --list-sdks | grep -q '10.0'; then
+            curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --channel 10.0
+            echo "$HOME/.dotnet" >> $GITHUB_PATH
+          fi
+
+      - name: Restore Dependencies
+        run: dotnet restore PosBackend.sln
+
+      - name: Build Backend (Release)
+        run: dotnet build PosBackend.sln --configuration Release --no-restore
+
+      - name: Run Backend Unit Tests
+        run: dotnet test PosBackend.sln --configuration Release --no-build --verbosity normal
+
+  frontend-validation:
+    name: Frontend Lint & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Build Frontend
+        working-directory: ./frontend
+        env:
+          VITE_API_URL: https://80f96mej30.execute-api.us-east-1.amazonaws.com
+        run: npm run build
