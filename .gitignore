@@ -67,3 +67,5 @@ Thumbs.db
 .nuget/
 **/packages/
 !**/packages/build/
+.vercel
+.env*
