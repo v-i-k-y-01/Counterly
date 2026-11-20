@@ -48,7 +48,8 @@ jobs:
       - name: Create Pre-Release RDS Backup Snapshot
         if: ${{ github.event.inputs.skip_snapshot != 'true' }}
         run: |
-          SNAPSHOT_ID="pos-db-release-${{ env.RELEASE_TAG }}-$(date +%s)"
+          SAFE_TAG=$(echo "${{ env.RELEASE_TAG }}" | sed 's/[^a-zA-Z0-9]/-/g' | tr -s '-' | sed 's/^-//;s/-$//')
+          SNAPSHOT_ID="pos-db-release-${SAFE_TAG}-$(date +%s)"
           echo "Creating safety RDS snapshot: $SNAPSHOT_ID"
           aws rds create-db-snapshot \
             --db-instance-identifier pos-db \
