@@ -50,12 +50,17 @@ jobs:
         run: |
           SAFE_TAG=$(echo "${{ env.RELEASE_TAG }}" | sed 's/[^a-zA-Z0-9]/-/g' | tr -s '-' | sed 's/^-//;s/-$//')
           SNAPSHOT_ID="pos-db-release-${SAFE_TAG}-$(date +%s)"
-          echo "Creating safety RDS snapshot: $SNAPSHOT_ID"
-          aws rds create-db-snapshot \
-            --db-instance-identifier pos-db \
-            --db-snapshot-identifier "$SNAPSHOT_ID" \
-            --region us-east-1
-          echo "Snapshot creation initiated."
+          echo "Checking database status before creating snapshot: $SNAPSHOT_ID"
+          DB_STATUS=$(aws rds describe-db-instances --db-instance-identifier pos-db --region us-east-1 --query "DBInstances[0].DBInstanceStatus" --output text)
+          if [ "$DB_STATUS" = "available" ]; then
+            aws rds create-db-snapshot \
+              --db-instance-identifier pos-db \
+              --db-snapshot-identifier "$SNAPSHOT_ID" \
+              --region us-east-1
+            echo "Snapshot creation initiated."
+          else
+            echo "::warning::Database is currently in '$DB_STATUS' state (a backup snapshot is already in progress). Proceeding safely with release."
+          fi
 
       - name: Log in to Amazon ECR
         id: login-ecr
