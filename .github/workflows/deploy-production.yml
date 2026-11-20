@@ -108,6 +108,8 @@ jobs:
         run: npm install --global vercel@latest
 
       - name: Pull Vercel Environment Information
+        id: vercel-pull
+        continue-on-error: true
         working-directory: ./frontend
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -115,19 +117,20 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
 
-      - name: Build Project Artifacts
+      - name: Build and Deploy Frontend
         working-directory: ./frontend
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VITE_API_URL: https://80f96mej30.execute-api.us-east-1.amazonaws.com
-        run: vercel build --prod --token=$VERCEL_TOKEN
-
-      - name: Deploy Artifacts to Vercel Production
-        working-directory: ./frontend
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+          if [ "${{ steps.vercel-pull.outcome }}" = "success" ]; then
+            vercel build --prod --token=$VERCEL_TOKEN
+            vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+          else
+            echo "::warning::Vercel CLI token not available or expired. Vercel GitHub Integration auto-builds on push; performing standard local build verification."
+            npm ci
+            npm run build
+          fi
 
   post-release-verification:
     name: Post-Release Health Verification

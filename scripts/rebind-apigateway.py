@@ -30,12 +30,16 @@ def get_running_task_ip(cluster: str, service: str, region: str) -> str:
     if not task_arns:
         raise RuntimeError(f"No running tasks found for service {service}")
 
-    # Use the most recently launched task ARN
-    target_task_arn = task_arns[-1]
-    print(f"[+] Found active task: {target_task_arn}")
+    # Describe all running tasks and pick the newest by createdAt
+    desc = run_aws_json("ecs", "describe-tasks", "--cluster", cluster, "--tasks", *task_arns, "--region", region)
+    tasks = desc.get("tasks", [])
+    if not tasks:
+        raise RuntimeError("Failed to describe ECS tasks.")
 
-    desc = run_aws_json("ecs", "describe-tasks", "--cluster", cluster, "--tasks", target_task_arn, "--region", region)
-    task_data = desc["tasks"][0]
+    tasks_sorted = sorted(tasks, key=lambda t: str(t.get("createdAt", "")), reverse=True)
+    task_data = tasks_sorted[0]
+    target_task_arn = task_data["taskArn"]
+    print(f"[+] Found newest active task: {target_task_arn}")
 
     eni_id = None
     for attachment in task_data.get("attachments", []):

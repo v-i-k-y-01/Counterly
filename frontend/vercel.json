@@ -1,6 +1,6 @@
 {
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "http://44.222.174.226:8080/api/$1" },
+    { "source": "/api/(.*)", "destination": "https://80f96mej30.execute-api.us-east-1.amazonaws.com/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
