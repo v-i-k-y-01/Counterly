@@ -85,6 +85,12 @@ jobs:
             --service pos-api-service \
             --force-new-deployment \
             --region us-east-1
+          echo "Waiting for ECS service to reach steady state..."
+          aws ecs wait services-stable \
+            --cluster pos-cluster \
+            --services pos-api-service \
+            --region us-east-1
+          echo "ECS service is stable with the new deployment."
 
       - name: Verify Health and Rebind API Gateway
         run: |
