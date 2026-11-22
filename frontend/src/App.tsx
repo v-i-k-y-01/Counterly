@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import {
   BarChart3,
   Boxes,
+  Calendar,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -22,7 +23,8 @@ import {
   Tag,
   Trash2,
   Users,
-  WalletCards
+  WalletCards,
+  X
 } from 'lucide-react';
 import { ApiError } from './api/client';
 import { posApi } from './api/pos';
@@ -214,6 +216,7 @@ function AppShell() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [sales, setSales] = useState<PagedResult<Sale> | null>(null);
+  const [salesDateFilter, setSalesDateFilter] = useState('');
   const [dailyRevenue, setDailyRevenue] = useState<DailyRevenue[]>([]);
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
 
@@ -251,6 +254,26 @@ function AppShell() {
     setCategories(groups);
   };
 
+  const fetchSalesData = async (page = 1, date = salesDateFilter) => {
+    setLoading(true);
+    try {
+      let from: string | undefined;
+      let to: string | undefined;
+      if (date) {
+        const start = new Date(`${date}T00:00:00`);
+        const end = new Date(`${date}T23:59:59.999`);
+        from = start.toISOString();
+        to = end.toISOString();
+      }
+      const data = await posApi.sales({ page, from, to });
+      setSales(data);
+    } catch (exception) {
+      showError(exception);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const loadViewData = async () => {
     setLoading(true);
     try {
@@ -266,7 +289,7 @@ function AppShell() {
         setDailyRevenue(revenue);
         setTopProducts(top);
       } else if (view === 'sales') {
-        setSales(await posApi.sales());
+        await fetchSalesData(1, salesDateFilter);
       } else {
         await loadCatalog();
       }
@@ -568,16 +591,14 @@ function AppShell() {
             {view === 'sales' && (
               <SalesHistory
                 sales={sales}
+                dateFilter={salesDateFilter}
+                onDateFilterChange={async (newDate) => {
+                  setSalesDateFilter(newDate);
+                  await fetchSalesData(1, newDate);
+                }}
                 onViewReceipt={setPrintedSale}
                 onPage={async (page) => {
-                  try {
-                    setLoading(true);
-                    setSales(await posApi.sales(page));
-                  } catch (exception) {
-                    showError(exception);
-                  } finally {
-                    setLoading(false);
-                  }
+                  await fetchSalesData(page, salesDateFilter);
                 }}
               />
             )}
@@ -1212,6 +1233,8 @@ function Categories({ categories, onEdit, onDelete }: CategoriesProps) {
 
 interface SalesHistoryProps {
   sales: PagedResult<Sale> | null;
+  dateFilter: string;
+  onDateFilterChange: (date: string) => Promise<void>;
   onPage: (page: number) => Promise<void>;
   onViewReceipt: (sale: Sale) => void;
 }
@@ -1219,87 +1242,115 @@ interface SalesHistoryProps {
 /**
  * Historical transaction receipt logs layout.
  */
-function SalesHistory({ sales, onPage, onViewReceipt }: SalesHistoryProps) {
-  if (!sales?.items.length) {
-    return (
-      <EmptyState
-        icon={<ReceiptText />}
-        title="No sales recorded"
-        detail="Completed checkouts will show up here."
-      />
-    );
-  }
-
+function SalesHistory({ sales, dateFilter, onDateFilterChange, onPage, onViewReceipt }: SalesHistoryProps) {
   return (
     <section className="panel table-panel">
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Receipt</th>
-              <th>Cashier</th>
-              <th>Payment</th>
-              <th>Items</th>
-              <th>Created</th>
-              <th>Total</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {sales.items.map((sale) => {
-              const itemsCount = sale.items.reduce((sum, item) => sum + item.quantity, 0);
-
-              return (
-                <tr key={sale.id}>
-                  <td>
-                    <strong>#{sale.id.slice(0, 8).toUpperCase()}</strong>
-                  </td>
-                  <td>{sale.cashierEmail}</td>
-                  <td>
-                    <span className="pill">{sale.paymentMethod}</span>
-                  </td>
-                  <td>{itemsCount}</td>
-                  <td>{formatDate(sale.createdAt)}</td>
-                  <td>
-                    <strong>{formatMoney(sale.totalAmount)}</strong>
-                  </td>
-                  <td className="actions">
-                    <button
-                      className="receipt-btn"
-                      onClick={() => onViewReceipt(sale)}
-                      title="View & Print Receipt"
-                    >
-                      <Printer size={15} /> Receipt
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="pagination">
-        <span>
-          Page {sales.page} of {Math.max(1, Math.ceil(sales.totalCount / sales.pageSize))}
-        </span>
-        <div>
-          <button
-            className="icon-button"
-            disabled={sales.page <= 1}
-            onClick={() => void onPage(sales.page - 1)}
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <button
-            className="icon-button"
-            disabled={sales.page * sales.pageSize >= sales.totalCount}
-            onClick={() => void onPage(sales.page + 1)}
-          >
-            <ChevronRight size={18} />
-          </button>
+      <div className="table-toolbar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div className="search-field compact" style={{ width: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '0 12px' }}>
+            <Calendar size={18} style={{ color: '#887eb8' }} />
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => void onDateFilterChange(e.target.value)}
+              title="Filter sales by date"
+              style={{ border: 0, outline: 0, padding: '10px 0', background: 'transparent', color: '#434057', fontSize: 13, cursor: 'pointer' }}
+            />
+          </div>
+          {dateFilter && (
+            <button
+              className="text-button"
+              onClick={() => void onDateFilterChange('')}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, padding: '6px 10px', background: '#f2eff8', borderRadius: 8 }}
+            >
+              <X size={14} /> Clear date
+            </button>
+          )}
         </div>
+        <span>
+          {sales ? `${sales.totalCount} transaction${sales.totalCount === 1 ? '' : 's'}` : ''}
+          {dateFilter ? ` on ${new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(dateFilter + 'T00:00:00'))}` : ''}
+        </span>
       </div>
+
+      {!sales?.items.length ? (
+        <EmptyState
+          icon={<ReceiptText />}
+          title={dateFilter ? 'No sales for selected date' : 'No sales recorded'}
+          detail={dateFilter ? 'No sales transactions took place on this date. Try choosing another date or clearing the filter.' : 'Completed checkouts will show up here.'}
+        />
+      ) : (
+        <>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Receipt</th>
+                  <th>Cashier</th>
+                  <th>Payment</th>
+                  <th>Items</th>
+                  <th>Created</th>
+                  <th>Total</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sales.items.map((sale) => {
+                  const itemsCount = sale.items.reduce((sum, item) => sum + item.quantity, 0);
+
+                  return (
+                    <tr key={sale.id}>
+                      <td>
+                        <strong>#{sale.id.slice(0, 8).toUpperCase()}</strong>
+                      </td>
+                      <td>{sale.cashierEmail}</td>
+                      <td>
+                        <span className="pill">{sale.paymentMethod}</span>
+                      </td>
+                      <td>{itemsCount}</td>
+                      <td>{formatDate(sale.createdAt)}</td>
+                      <td>
+                        <strong>{formatMoney(sale.totalAmount)}</strong>
+                      </td>
+                      <td className="actions">
+                        <button
+                          className="receipt-btn"
+                          onClick={() => onViewReceipt(sale)}
+                          title="View & Print Receipt"
+                        >
+                          <Printer size={15} /> Receipt
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="pagination">
+            <span>
+              Page {sales.page} of {Math.max(1, Math.ceil(sales.totalCount / sales.pageSize))}
+            </span>
+            <div>
+              <button
+                className="icon-button"
+                disabled={sales.page <= 1}
+                onClick={() => void onPage(sales.page - 1)}
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                className="icon-button"
+                disabled={sales.page * sales.pageSize >= sales.totalCount}
+                onClick={() => void onPage(sales.page + 1)}
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </section>
   );
 }
