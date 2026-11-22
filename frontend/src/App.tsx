@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import {
   BarChart3,
   Boxes,
+  Calendar,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -19,6 +20,7 @@ import {
   Search,
   ShoppingBag,
   Sparkles,
+  Store,
   Tag,
   Trash2,
   Users,
@@ -61,6 +63,32 @@ const formatDate = (dateString: string): string => {
     hour: 'numeric',
     minute: '2-digit'
   }).format(new Date(dateString));
+};
+
+/**
+ * Resolves a dynamic greeting based on the current hour of the day.
+ */
+const getTimeBasedGreeting = (date: Date = new Date()): string => {
+  const currentHour = date.getHours();
+  if (currentHour >= 4 && currentHour < 12) {
+    return 'Good morning';
+  }
+  if (currentHour >= 12 && currentHour < 17) {
+    return 'Good afternoon';
+  }
+  return 'Good evening';
+};
+
+/**
+ * Formats the current date into a full, human-friendly presentation (e.g. Sunday, November 22, 2026).
+ */
+const formatCurrentDate = (date: Date = new Date()): string => {
+  return date.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
+  });
 };
 
 /**
@@ -114,7 +142,11 @@ function LoginScreen() {
 
     try {
       if (mode === 'register') {
-        await posApi.register(email, password, storeName.trim() || undefined);
+        const trimmedStore = storeName.trim();
+        if (trimmedStore) {
+          localStorage.setItem('pos.storeName', trimmedStore);
+        }
+        await posApi.register(email, password, trimmedStore || undefined);
       }
       await login(email, password);
     } catch (exception) {
@@ -445,7 +477,7 @@ function AppShell() {
           <div className="avatar">{session?.email[0].toUpperCase()}</div>
           <div>
             <strong>{session?.email.split('@')[0]}</strong>
-            <span>{session?.role}</span>
+            <span>{session?.role}{session?.storeName ? ` • ${session.storeName}` : ''}</span>
           </div>
           <button className="icon-button" title="Sign out" onClick={logout}>
             <LogOut size={18} />
@@ -458,28 +490,33 @@ function AppShell() {
           <div>
             <p className="eyebrow">{view === 'checkout' ? 'POINT OF SALE' : 'STORE OPERATIONS'}</p>
             <h1>
-              {
-                ({
-                  dashboard: 'Good morning',
-                  checkout: 'New sale',
-                  inventory: 'Product catalog',
-                  categories: 'Categories',
-                  sales: 'Sales history',
-                  team: 'Your team'
-                } as Record<View, string>)[view]
-              }
+              {view === 'dashboard'
+                ? getTimeBasedGreeting()
+                : ({
+                    checkout: 'New sale',
+                    inventory: 'Product catalog',
+                    categories: 'Categories',
+                    sales: 'Sales history',
+                    team: 'Your team'
+                  } as Record<Exclude<View, 'dashboard'>, string>)[view]}
             </h1>
+            {view === 'dashboard' && (
+              <p className="topbar-date">
+                <Calendar size={14} />
+                <span>{formatCurrentDate()}</span>
+              </p>
+            )}
           </div>
-          {view === 'dashboard' && isOwner && (
-            <button
-              className="primary-button"
-              onClick={() => {
-                setEditingProduct(null);
-                setModal('product');
-              }}
-            >
-              <PackagePlus size={18} /> Add product
-            </button>
+          {view === 'dashboard' && (
+            <div className="store-badge">
+              <div className="store-badge-icon">
+                <Store size={18} />
+              </div>
+              <div className="store-badge-text">
+                <span className="store-badge-label">STORE</span>
+                <span className="store-badge-name">{session?.storeName || 'Counterly Store'}</span>
+              </div>
+            </div>
           )}
           {view === 'inventory' && (
             <button
@@ -671,10 +708,16 @@ interface DashboardProps {
  * Analytics Dashboard component rendering store KPIs, charts, and best sellers list.
  */
 function Dashboard({ products, categories, revenue, top, onStartSale }: DashboardProps) {
-  const todayDateString = new Date().toISOString().slice(0, 10);
+  const today = new Date();
+  const todayDateString = today.toISOString().slice(0, 10);
   const todayRevenueRecord = revenue.find((item) => item.date.slice(0, 10) === todayDateString);
   const totalRevenue = revenue.reduce((sum, item) => sum + item.totalRevenue, 0);
   const lowStockCount = products.filter((item) => item.stockQty < 6).length;
+  const todayFormattedShort = today.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
 
   return (
     <>
@@ -683,7 +726,7 @@ function Dashboard({ products, categories, revenue, top, onStartSale }: Dashboar
           icon={<WalletCards />}
           label="Today’s sales"
           value={formatMoney(todayRevenueRecord?.totalRevenue ?? 0)}
-          detail={`${todayRevenueRecord?.saleCount ?? 0} transactions`}
+          detail={`${todayRevenueRecord?.saleCount ?? 0} transactions • ${todayFormattedShort}`}
           tone="purple"
         />
         <Stat
@@ -716,7 +759,7 @@ function Dashboard({ products, categories, revenue, top, onStartSale }: Dashboar
               <h2>Revenue pulse</h2>
               <p>Daily sales activity</p>
             </div>
-            <span className="pill">Live data</span>
+            <span className="pill">Live data • {todayFormattedShort}</span>
           </div>
 
           {revenue.length ? (

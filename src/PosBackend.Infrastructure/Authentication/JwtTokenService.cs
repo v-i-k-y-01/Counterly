@@ -58,7 +58,7 @@ public sealed class JwtTokenService : ITokenService
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.Key));
         var signingCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, user.Email),
@@ -66,6 +66,11 @@ public sealed class JwtTokenService : ITokenService
             new Claim("store_id", user.StoreId.ToString()),
             new Claim(TokenTypeClaim, tokenType)
         };
+
+        if (user.Store != null && !string.IsNullOrWhiteSpace(user.Store.Name))
+        {
+            claims.Add(new Claim("store_name", user.Store.Name));
+        }
 
         var securityToken = new JwtSecurityToken(
             issuer: _options.Issuer,

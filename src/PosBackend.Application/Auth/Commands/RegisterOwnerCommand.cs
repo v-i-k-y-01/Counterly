@@ -99,7 +99,8 @@ public sealed class RegisterOwnerCommandHandler : IRequestHandler<RegisterOwnerC
             PasswordHash = _passwordHasher.Hash(request.Password),
             Role = UserRole.Owner,
             StoreId = store.Id,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            Store = store
         };
 
         _dbContext.Stores.Add(store);
@@ -111,6 +112,7 @@ public sealed class RegisterOwnerCommandHandler : IRequestHandler<RegisterOwnerC
             newUser.Email,
             newUser.Role.ToString(),
             newUser.StoreId,
-            newUser.CreatedAt);
+            newUser.CreatedAt,
+            store.Name);
     }
 }
