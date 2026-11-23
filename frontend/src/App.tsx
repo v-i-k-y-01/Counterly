@@ -31,6 +31,7 @@ import { posApi } from './api/pos';
 import type { CartLine, Category, DailyRevenue, PagedResult, Product, Sale, TopProduct } from './api/types';
 import { useAuth } from './auth/AuthContext';
 import { BarcodeLabelModal } from './components/BarcodeLabelModal';
+import { DateFilterInput } from './components/DateFilterInput';
 import { EmptyState } from './components/EmptyState';
 import { Modal } from './components/Modal';
 import { ReceiptModal } from './components/ReceiptModal';
@@ -216,7 +217,8 @@ function AppShell() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [sales, setSales] = useState<PagedResult<Sale> | null>(null);
-  const [salesDateFilter, setSalesDateFilter] = useState('');
+  const [salesStartDate, setSalesStartDate] = useState('');
+  const [salesEndDate, setSalesEndDate] = useState('');
   const [dailyRevenue, setDailyRevenue] = useState<DailyRevenue[]>([]);
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
 
@@ -254,23 +256,38 @@ function AppShell() {
     setCategories(groups);
   };
 
-  const fetchSalesData = async (page = 1, date = salesDateFilter) => {
-    setLoading(true);
+  /**
+   * Fetches paginated sales transaction history with optional start and end date filtering.
+   * If only startDate is supplied, queries the entire 24-hour range for that single date.
+   * If both startDate and endDate are supplied, queries the continuous range between them.
+   * If neither is supplied, returns all transactions unfiltered.
+   */
+  const fetchSalesData = async (page = 1, startDate = salesStartDate, endDate = salesEndDate) => {
     try {
       let from: string | undefined;
       let to: string | undefined;
-      if (date) {
-        const start = new Date(`${date}T00:00:00`);
-        const end = new Date(`${date}T23:59:59.999`);
+      if (startDate) {
+        // Start of boundary day (00:00:00.000)
+        const start = new Date(`${startDate}T00:00:00`);
         from = start.toISOString();
+        if (endDate) {
+          // Explicit end boundary day (23:59:59.999)
+          const end = new Date(`${endDate}T23:59:59.999`);
+          to = end.toISOString();
+        } else {
+          // When end date is omitted (optional), filter for the entire single day of start date
+          const end = new Date(`${startDate}T23:59:59.999`);
+          to = end.toISOString();
+        }
+      } else if (endDate) {
+        // Fallback if only end date is given: query up to end of that date
+        const end = new Date(`${endDate}T23:59:59.999`);
         to = end.toISOString();
       }
       const data = await posApi.sales({ page, from, to });
       setSales(data);
     } catch (exception) {
       showError(exception);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -289,7 +306,7 @@ function AppShell() {
         setDailyRevenue(revenue);
         setTopProducts(top);
       } else if (view === 'sales') {
-        await fetchSalesData(1, salesDateFilter);
+        await fetchSalesData(1, salesStartDate, salesEndDate);
       } else {
         await loadCatalog();
       }
@@ -591,14 +608,23 @@ function AppShell() {
             {view === 'sales' && (
               <SalesHistory
                 sales={sales}
-                dateFilter={salesDateFilter}
-                onDateFilterChange={async (newDate) => {
-                  setSalesDateFilter(newDate);
-                  await fetchSalesData(1, newDate);
+                startDate={salesStartDate}
+                endDate={salesEndDate}
+                onDateFilterChange={async (newStart, newEnd) => {
+                  if (newStart && newEnd && newEnd < newStart) {
+                    setNotice({
+                      message: 'End date must be on or after start date.',
+                      type: 'error'
+                    });
+                    return;
+                  }
+                  setSalesStartDate(newStart);
+                  setSalesEndDate(newEnd);
+                  await fetchSalesData(1, newStart, newEnd);
                 }}
                 onViewReceipt={setPrintedSale}
                 onPage={async (page) => {
-                  await fetchSalesData(page, salesDateFilter);
+                  await fetchSalesData(page, salesStartDate, salesEndDate);
                 }}
               />
             )}
@@ -1233,51 +1259,97 @@ function Categories({ categories, onEdit, onDelete }: CategoriesProps) {
 
 interface SalesHistoryProps {
   sales: PagedResult<Sale> | null;
-  dateFilter: string;
-  onDateFilterChange: (date: string) => Promise<void>;
+  /** Active ISO start date filter (YYYY-MM-DD), or empty string when no filter is active. */
+  startDate: string;
+  /** Active ISO end date filter (YYYY-MM-DD), or empty string when end date is omitted. */
+  endDate: string;
+  /** Callback to trigger sales query across the specified date range. */
+  onDateFilterChange: (startDate: string, endDate: string) => Promise<void>;
+  /** Pagination handler. */
   onPage: (page: number) => Promise<void>;
+  /** Receipt view modal opener. */
   onViewReceipt: (sale: Sale) => void;
 }
 
 /**
- * Historical transaction receipt logs layout.
+ * Historical transaction receipt logs layout with From date and optional To date range filtering.
  */
-function SalesHistory({ sales, dateFilter, onDateFilterChange, onPage, onViewReceipt }: SalesHistoryProps) {
+function SalesHistory({ sales, startDate, endDate, onDateFilterChange, onPage, onViewReceipt }: SalesHistoryProps) {
+  const hasFilter = Boolean(startDate || endDate);
+
+  const formatDateDisplay = (dateStr: string) => {
+    return new Intl.DateTimeFormat('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    }).format(new Date(`${dateStr}T00:00:00`));
+  };
+
   return (
     <section className="panel table-panel">
       <div className="table-toolbar">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div className="search-field compact" style={{ width: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '0 12px' }}>
-            <Calendar size={18} style={{ color: '#887eb8' }} />
-            <input
-              type="date"
-              value={dateFilter}
-              onChange={(e) => void onDateFilterChange(e.target.value)}
-              title="Filter sales by date"
-              style={{ border: 0, outline: 0, padding: '10px 0', background: 'transparent', color: '#434057', fontSize: 13, cursor: 'pointer' }}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#6e6b82' }}>From:</span>
+            <DateFilterInput
+              value={startDate}
+              showClearButton={false}
+              title="Start date"
+              onChange={(newDate) => void onDateFilterChange(newDate, endDate)}
             />
           </div>
-          {dateFilter && (
+
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#6e6b82' }}>To (optional):</span>
+            <DateFilterInput
+              value={endDate}
+              showClearButton={false}
+              title="End date (optional)"
+              onChange={(newDate) => void onDateFilterChange(startDate, newDate)}
+            />
+          </div>
+
+          {hasFilter && (
             <button
-              className="text-button"
-              onClick={() => void onDateFilterChange('')}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, padding: '6px 10px', background: '#f2eff8', borderRadius: 8 }}
+              type="button"
+              onClick={() => void onDateFilterChange('', '')}
+              title="Clear date filters"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                border: 0,
+                background: '#f1edf8',
+                color: '#65598d',
+                borderRadius: 8,
+                padding: '6px 12px',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'background 0.15s'
+              }}
             >
-              <X size={14} /> Clear date
+              <X size={14} /> Clear dates
             </button>
           )}
         </div>
         <span>
           {sales ? `${sales.totalCount} transaction${sales.totalCount === 1 ? '' : 's'}` : ''}
-          {dateFilter ? ` on ${new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(dateFilter + 'T00:00:00'))}` : ''}
+          {startDate && !endDate && ` on ${formatDateDisplay(startDate)}`}
+          {startDate && endDate && (
+            startDate === endDate
+              ? ` on ${formatDateDisplay(startDate)}`
+              : ` from ${formatDateDisplay(startDate)} to ${formatDateDisplay(endDate)}`
+          )}
+          {!startDate && endDate && ` until ${formatDateDisplay(endDate)}`}
         </span>
       </div>
 
       {!sales?.items.length ? (
         <EmptyState
           icon={<ReceiptText />}
-          title={dateFilter ? 'No sales for selected date' : 'No sales recorded'}
-          detail={dateFilter ? 'No sales transactions took place on this date. Try choosing another date or clearing the filter.' : 'Completed checkouts will show up here.'}
+          title={hasFilter ? 'No sales for selected dates' : 'No sales recorded'}
+          detail={hasFilter ? 'No sales transactions took place in this date range. Try choosing another date range or clearing the filter.' : 'Completed checkouts will show up here.'}
         />
       ) : (
         <>
