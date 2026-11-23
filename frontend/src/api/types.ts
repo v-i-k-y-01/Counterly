@@ -1,5 +1,5 @@
 export type Role = 'Owner' | 'Cashier';
-export type User = { id: string; email: string; role: Role; createdAt: string };
+export type User = { id: string; email: string; role: Role; storeId?: string; storeName?: string; createdAt: string };
 export type TokenResponse = { accessToken: string; accessTokenExpiresAt: string; refreshToken: string; refreshTokenExpiresAt: string };
 export type Category = { id: string; name: string };
 export type Product = { id: string; categoryId: string | null; categoryName: string | null; name: string; sku: string; price: number; stockQty: number; createdAt: string };

@@ -8,6 +8,7 @@ import type { Role } from '../api/types';
 type Session = {
   email: string;
   role: Role;
+  storeName?: string;
 } | null;
 
 /**
@@ -48,7 +49,12 @@ function readSessionFromToken(): Session {
       ?? decodedPayload.unique_name 
       ?? 'Team member';
 
-    return { email, role };
+    const storeName = decodedPayload.store_name 
+      ?? decodedPayload.storeName 
+      ?? localStorage.getItem('pos.storeName') 
+      ?? undefined;
+
+    return { email, role, storeName };
   } catch {
     return null;
   }
@@ -69,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     logout: () => {
       localStorage.removeItem('pos.accessToken');
+      localStorage.removeItem('pos.storeName');
       setSession(null);
     }
   }), [session]);
