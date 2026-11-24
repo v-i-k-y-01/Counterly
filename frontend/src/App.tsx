@@ -635,23 +635,14 @@ function AppShell() {
       )}
 
       {confirmation && (
-        <div className="toast confirm">
-          <strong>{confirmation.title}</strong>
-          <p>{confirmation.message}</p>
-          <div className="toast-actions">
-            <button className="text-button" onClick={confirmation.onCancel}>
-              {confirmation.cancelLabel}
-            </button>
-            <button
-              className="danger"
-              onClick={async () => {
-                await confirmation.onConfirm();
-              }}
-            >
-              {confirmation.confirmLabel}
-            </button>
-          </div>
-        </div>
+        <ConfirmModal
+          title={confirmation.title}
+          message={confirmation.message}
+          confirmLabel={confirmation.confirmLabel}
+          cancelLabel={confirmation.cancelLabel}
+          onConfirm={confirmation.onConfirm}
+          onCancel={confirmation.onCancel}
+        />
       )}
 
       {notice && <Toast {...notice} />}
@@ -1537,6 +1528,65 @@ function TeamModal({ onClose, onSuccess, onError }: TeamModalProps) {
           {busy ? 'Creating…' : `Create ${role.toLowerCase()}`}
         </button>
       </form>
+    </Modal>
+  );
+}
+
+/**
+ * Centered confirmation modal dialog for destructive actions (e.g. delete product/category).
+ */
+interface ConfirmModalProps {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  onConfirm: () => Promise<void>;
+  onCancel: () => void;
+}
+
+function ConfirmModal({
+  title,
+  message,
+  confirmLabel,
+  cancelLabel,
+  onConfirm,
+  onCancel
+}: ConfirmModalProps) {
+  const [confirming, setConfirming] = useState(false);
+
+  const handleConfirm = async () => {
+    setConfirming(true);
+    try {
+      await onConfirm();
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={title}
+      className="confirm-modal"
+      onClose={() => {
+        if (!confirming) {
+          onCancel();
+        }
+      }}
+    >
+      <p className="confirm-message">{message}</p>
+      <div className="confirm-actions">
+        <button type="button" className="secondary-button" disabled={confirming} onClick={onCancel}>
+          {cancelLabel}
+        </button>
+        <button
+          type="button"
+          className="danger-button"
+          disabled={confirming}
+          onClick={() => void handleConfirm()}
+        >
+          {confirming ? 'Deleting…' : confirmLabel}
+        </button>
+      </div>
     </Modal>
   );
 }
