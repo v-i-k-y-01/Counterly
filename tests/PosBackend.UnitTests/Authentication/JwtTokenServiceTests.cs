@@ -75,4 +75,36 @@ public class JwtTokenServiceTests
         var refreshTypeClaim = parsedRefreshToken.Claims.First(c => c.Type == "token_type").Value;
         refreshTypeClaim.Should().Be("refresh");
     }
+
+    [Fact]
+    public void CreateTokens_WhenStoreIsPresent_ShouldIncludeStoreNameClaim()
+    {
+        // Arrange
+        var store = new Store
+        {
+            Id = Guid.NewGuid(),
+            Name = "Downtown Supermarket",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Email = "owner@downtown.com",
+            Role = UserRole.Owner,
+            StoreId = store.Id,
+            Store = store
+        };
+
+        // Act
+        var tokenResponse = _tokenService.CreateTokens(user);
+
+        // Assert
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var parsedAccessToken = tokenHandler.ReadJwtToken(tokenResponse.AccessToken);
+
+        var storeNameClaim = parsedAccessToken.Claims.FirstOrDefault(c => c.Type == "store_name");
+        storeNameClaim.Should().NotBeNull();
+        storeNameClaim!.Value.Should().Be("Downtown Supermarket");
+    }
 }

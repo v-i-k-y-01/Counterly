@@ -74,12 +74,20 @@ public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, TokenRes
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
 
         var user = await _dbContext.Users
+            .Include(u => u.Store)
             .SingleOrDefaultAsync(user => user.Email == normalizedEmail, cancellationToken);
 
         if (user is null || !_passwordHasher.Verify(request.Password, user.PasswordHash))
         {
             // Fail genericly to avoid exposing account existence details.
             throw new UnauthorizedAccessException("Invalid email or password.");
+        }
+
+        if (user.Store == null)
+        {
+            user.Store = await _dbContext.Stores
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == user.StoreId, cancellationToken);
         }
 
         return _tokenService.CreateTokens(user);

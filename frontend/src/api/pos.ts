@@ -137,10 +137,14 @@ export const posApi = {
     request<Sale>(`/api/sales/${id}`),
 
   /**
-   * Fetches paginated sales history.
+   * Fetches paginated sales history, optionally filtered by date range.
    */
-  sales: (page = 1) =>
-    request<PagedResult<Sale>>(`/api/sales${buildQueryString({ page, pageSize: 12 })}`),
+  sales: (options?: number | { page?: number; from?: string; to?: string }) => {
+    const page = typeof options === 'number' ? options : options?.page ?? 1;
+    const from = typeof options === 'object' ? options?.from : undefined;
+    const to = typeof options === 'object' ? options?.to : undefined;
+    return request<PagedResult<Sale>>(`/api/sales${buildQueryString({ page, pageSize: 12, from, to })}`);
+  },
 
   /**
    * Retrieves daily revenue report data.

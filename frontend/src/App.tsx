@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import {
   BarChart3,
   Boxes,
+  Calendar,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -19,16 +20,19 @@ import {
   Search,
   ShoppingBag,
   Sparkles,
+  Store,
   Tag,
   Trash2,
   Users,
-  WalletCards
+  WalletCards,
+  X
 } from 'lucide-react';
 import { ApiError } from './api/client';
 import { posApi } from './api/pos';
 import type { CartLine, Category, DailyRevenue, PagedResult, Product, Sale, TopProduct } from './api/types';
 import { useAuth } from './auth/AuthContext';
 import { BarcodeLabelModal } from './components/BarcodeLabelModal';
+import { DateFilterInput } from './components/DateFilterInput';
 import { EmptyState } from './components/EmptyState';
 import { Modal } from './components/Modal';
 import { ReceiptModal } from './components/ReceiptModal';
@@ -61,6 +65,32 @@ const formatDate = (dateString: string): string => {
     hour: 'numeric',
     minute: '2-digit'
   }).format(new Date(dateString));
+};
+
+/**
+ * Resolves a dynamic greeting based on the current hour of the day.
+ */
+const getTimeBasedGreeting = (date: Date = new Date()): string => {
+  const currentHour = date.getHours();
+  if (currentHour >= 4 && currentHour < 12) {
+    return 'Good morning';
+  }
+  if (currentHour >= 12 && currentHour < 17) {
+    return 'Good afternoon';
+  }
+  return 'Good evening';
+};
+
+/**
+ * Formats the current date into a full, human-friendly presentation (e.g. Sunday, November 22, 2026).
+ */
+const formatCurrentDate = (date: Date = new Date()): string => {
+  return date.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
+  });
 };
 
 /**
@@ -114,7 +144,11 @@ function LoginScreen() {
 
     try {
       if (mode === 'register') {
-        await posApi.register(email, password, storeName.trim() || undefined);
+        const trimmedStore = storeName.trim();
+        if (trimmedStore) {
+          localStorage.setItem('pos.storeName', trimmedStore);
+        }
+        await posApi.register(email, password, trimmedStore || undefined);
       }
       await login(email, password);
     } catch (exception) {
@@ -214,6 +248,8 @@ function AppShell() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [sales, setSales] = useState<PagedResult<Sale> | null>(null);
+  const [salesStartDate, setSalesStartDate] = useState('');
+  const [salesEndDate, setSalesEndDate] = useState('');
   const [dailyRevenue, setDailyRevenue] = useState<DailyRevenue[]>([]);
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
 
@@ -251,6 +287,41 @@ function AppShell() {
     setCategories(groups);
   };
 
+  /**
+   * Fetches paginated sales transaction history with optional start and end date filtering.
+   * If only startDate is supplied, queries the entire 24-hour range for that single date.
+   * If both startDate and endDate are supplied, queries the continuous range between them.
+   * If neither is supplied, returns all transactions unfiltered.
+   */
+  const fetchSalesData = async (page = 1, startDate = salesStartDate, endDate = salesEndDate) => {
+    try {
+      let from: string | undefined;
+      let to: string | undefined;
+      if (startDate) {
+        // Start of boundary day (00:00:00.000)
+        const start = new Date(`${startDate}T00:00:00`);
+        from = start.toISOString();
+        if (endDate) {
+          // Explicit end boundary day (23:59:59.999)
+          const end = new Date(`${endDate}T23:59:59.999`);
+          to = end.toISOString();
+        } else {
+          // When end date is omitted (optional), filter for the entire single day of start date
+          const end = new Date(`${startDate}T23:59:59.999`);
+          to = end.toISOString();
+        }
+      } else if (endDate) {
+        // Fallback if only end date is given: query up to end of that date
+        const end = new Date(`${endDate}T23:59:59.999`);
+        to = end.toISOString();
+      }
+      const data = await posApi.sales({ page, from, to });
+      setSales(data);
+    } catch (exception) {
+      showError(exception);
+    }
+  };
+
   const loadViewData = async () => {
     setLoading(true);
     try {
@@ -266,7 +337,7 @@ function AppShell() {
         setDailyRevenue(revenue);
         setTopProducts(top);
       } else if (view === 'sales') {
-        setSales(await posApi.sales());
+        await fetchSalesData(1, salesStartDate, salesEndDate);
       } else {
         await loadCatalog();
       }
@@ -445,7 +516,7 @@ function AppShell() {
           <div className="avatar">{session?.email[0].toUpperCase()}</div>
           <div>
             <strong>{session?.email.split('@')[0]}</strong>
-            <span>{session?.role}</span>
+            <span>{session?.role}{session?.storeName ? ` • ${session.storeName}` : ''}</span>
           </div>
           <button className="icon-button" title="Sign out" onClick={logout}>
             <LogOut size={18} />
@@ -458,28 +529,33 @@ function AppShell() {
           <div>
             <p className="eyebrow">{view === 'checkout' ? 'POINT OF SALE' : 'STORE OPERATIONS'}</p>
             <h1>
-              {
-                ({
-                  dashboard: 'Good morning',
-                  checkout: 'New sale',
-                  inventory: 'Product catalog',
-                  categories: 'Categories',
-                  sales: 'Sales history',
-                  team: 'Your team'
-                } as Record<View, string>)[view]
-              }
+              {view === 'dashboard'
+                ? getTimeBasedGreeting()
+                : ({
+                    checkout: 'New sale',
+                    inventory: 'Product catalog',
+                    categories: 'Categories',
+                    sales: 'Sales history',
+                    team: 'Your team'
+                  } as Record<Exclude<View, 'dashboard'>, string>)[view]}
             </h1>
+            {view === 'dashboard' && (
+              <p className="topbar-date">
+                <Calendar size={14} />
+                <span>{formatCurrentDate()}</span>
+              </p>
+            )}
           </div>
-          {view === 'dashboard' && isOwner && (
-            <button
-              className="primary-button"
-              onClick={() => {
-                setEditingProduct(null);
-                setModal('product');
-              }}
-            >
-              <PackagePlus size={18} /> Add product
-            </button>
+          {view === 'dashboard' && (
+            <div className="store-badge">
+              <div className="store-badge-icon">
+                <Store size={18} />
+              </div>
+              <div className="store-badge-text">
+                <span className="store-badge-label">STORE</span>
+                <span className="store-badge-name">{session?.storeName || 'Counterly Store'}</span>
+              </div>
+            </div>
           )}
           {view === 'inventory' && (
             <button
@@ -568,16 +644,23 @@ function AppShell() {
             {view === 'sales' && (
               <SalesHistory
                 sales={sales}
+                startDate={salesStartDate}
+                endDate={salesEndDate}
+                onDateFilterChange={async (newStart, newEnd) => {
+                  if (newStart && newEnd && newEnd < newStart) {
+                    setNotice({
+                      message: 'End date must be on or after start date.',
+                      type: 'error'
+                    });
+                    return;
+                  }
+                  setSalesStartDate(newStart);
+                  setSalesEndDate(newEnd);
+                  await fetchSalesData(1, newStart, newEnd);
+                }}
                 onViewReceipt={setPrintedSale}
                 onPage={async (page) => {
-                  try {
-                    setLoading(true);
-                    setSales(await posApi.sales(page));
-                  } catch (exception) {
-                    showError(exception);
-                  } finally {
-                    setLoading(false);
-                  }
+                  await fetchSalesData(page, salesStartDate, salesEndDate);
                 }}
               />
             )}
@@ -662,10 +745,16 @@ interface DashboardProps {
  * Analytics Dashboard component rendering store KPIs, charts, and best sellers list.
  */
 function Dashboard({ products, categories, revenue, top, onStartSale }: DashboardProps) {
-  const todayDateString = new Date().toISOString().slice(0, 10);
+  const today = new Date();
+  const todayDateString = today.toISOString().slice(0, 10);
   const todayRevenueRecord = revenue.find((item) => item.date.slice(0, 10) === todayDateString);
   const totalRevenue = revenue.reduce((sum, item) => sum + item.totalRevenue, 0);
   const lowStockCount = products.filter((item) => item.stockQty < 6).length;
+  const todayFormattedShort = today.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
 
   return (
     <>
@@ -674,7 +763,7 @@ function Dashboard({ products, categories, revenue, top, onStartSale }: Dashboar
           icon={<WalletCards />}
           label="Today’s sales"
           value={formatMoney(todayRevenueRecord?.totalRevenue ?? 0)}
-          detail={`${todayRevenueRecord?.saleCount ?? 0} transactions`}
+          detail={`${todayRevenueRecord?.saleCount ?? 0} transactions • ${todayFormattedShort}`}
           tone="purple"
         />
         <Stat
@@ -707,7 +796,7 @@ function Dashboard({ products, categories, revenue, top, onStartSale }: Dashboar
               <h2>Revenue pulse</h2>
               <p>Daily sales activity</p>
             </div>
-            <span className="pill">Live data</span>
+            <span className="pill">Live data • {todayFormattedShort}</span>
           </div>
 
           {revenue.length ? (
@@ -1203,94 +1292,170 @@ function Categories({ categories, onEdit, onDelete }: CategoriesProps) {
 
 interface SalesHistoryProps {
   sales: PagedResult<Sale> | null;
+  /** Active ISO start date filter (YYYY-MM-DD), or empty string when no filter is active. */
+  startDate: string;
+  /** Active ISO end date filter (YYYY-MM-DD), or empty string when end date is omitted. */
+  endDate: string;
+  /** Callback to trigger sales query across the specified date range. */
+  onDateFilterChange: (startDate: string, endDate: string) => Promise<void>;
+  /** Pagination handler. */
   onPage: (page: number) => Promise<void>;
+  /** Receipt view modal opener. */
   onViewReceipt: (sale: Sale) => void;
 }
 
 /**
- * Historical transaction receipt logs layout.
+ * Historical transaction receipt logs layout with From date and optional To date range filtering.
  */
-function SalesHistory({ sales, onPage, onViewReceipt }: SalesHistoryProps) {
-  if (!sales?.items.length) {
-    return (
-      <EmptyState
-        icon={<ReceiptText />}
-        title="No sales recorded"
-        detail="Completed checkouts will show up here."
-      />
-    );
-  }
+function SalesHistory({ sales, startDate, endDate, onDateFilterChange, onPage, onViewReceipt }: SalesHistoryProps) {
+  const hasFilter = Boolean(startDate || endDate);
+
+  const formatDateDisplay = (dateStr: string) => {
+    return new Intl.DateTimeFormat('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    }).format(new Date(`${dateStr}T00:00:00`));
+  };
 
   return (
     <section className="panel table-panel">
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Receipt</th>
-              <th>Cashier</th>
-              <th>Payment</th>
-              <th>Items</th>
-              <th>Created</th>
-              <th>Total</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {sales.items.map((sale) => {
-              const itemsCount = sale.items.reduce((sum, item) => sum + item.quantity, 0);
+      <div className="table-toolbar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#6e6b82' }}>From:</span>
+            <DateFilterInput
+              value={startDate}
+              showClearButton={false}
+              title="Start date"
+              onChange={(newDate) => void onDateFilterChange(newDate, endDate)}
+            />
+          </div>
 
-              return (
-                <tr key={sale.id}>
-                  <td>
-                    <strong>#{sale.id.slice(0, 8).toUpperCase()}</strong>
-                  </td>
-                  <td>{sale.cashierEmail}</td>
-                  <td>
-                    <span className="pill">{sale.paymentMethod}</span>
-                  </td>
-                  <td>{itemsCount}</td>
-                  <td>{formatDate(sale.createdAt)}</td>
-                  <td>
-                    <strong>{formatMoney(sale.totalAmount)}</strong>
-                  </td>
-                  <td className="actions">
-                    <button
-                      className="receipt-btn"
-                      onClick={() => onViewReceipt(sale)}
-                      title="View & Print Receipt"
-                    >
-                      <Printer size={15} /> Receipt
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#6e6b82' }}>To (optional):</span>
+            <DateFilterInput
+              value={endDate}
+              showClearButton={false}
+              title="End date (optional)"
+              onChange={(newDate) => void onDateFilterChange(startDate, newDate)}
+            />
+          </div>
 
-      <div className="pagination">
-        <span>
-          Page {sales.page} of {Math.max(1, Math.ceil(sales.totalCount / sales.pageSize))}
-        </span>
-        <div>
-          <button
-            className="icon-button"
-            disabled={sales.page <= 1}
-            onClick={() => void onPage(sales.page - 1)}
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <button
-            className="icon-button"
-            disabled={sales.page * sales.pageSize >= sales.totalCount}
-            onClick={() => void onPage(sales.page + 1)}
-          >
-            <ChevronRight size={18} />
-          </button>
+          {hasFilter && (
+            <button
+              type="button"
+              onClick={() => void onDateFilterChange('', '')}
+              title="Clear date filters"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                border: 0,
+                background: '#f1edf8',
+                color: '#65598d',
+                borderRadius: 8,
+                padding: '6px 12px',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'background 0.15s'
+              }}
+            >
+              <X size={14} /> Clear dates
+            </button>
+          )}
         </div>
+        <span>
+          {sales ? `${sales.totalCount} transaction${sales.totalCount === 1 ? '' : 's'}` : ''}
+          {startDate && !endDate && ` on ${formatDateDisplay(startDate)}`}
+          {startDate && endDate && (
+            startDate === endDate
+              ? ` on ${formatDateDisplay(startDate)}`
+              : ` from ${formatDateDisplay(startDate)} to ${formatDateDisplay(endDate)}`
+          )}
+          {!startDate && endDate && ` until ${formatDateDisplay(endDate)}`}
+        </span>
       </div>
+
+      {!sales?.items.length ? (
+        <EmptyState
+          icon={<ReceiptText />}
+          title={hasFilter ? 'No sales for selected dates' : 'No sales recorded'}
+          detail={hasFilter ? 'No sales transactions took place in this date range. Try choosing another date range or clearing the filter.' : 'Completed checkouts will show up here.'}
+        />
+      ) : (
+        <>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Receipt</th>
+                  <th>Cashier</th>
+                  <th>Payment</th>
+                  <th>Items</th>
+                  <th>Created</th>
+                  <th>Total</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sales.items.map((sale) => {
+                  const itemsCount = sale.items.reduce((sum, item) => sum + item.quantity, 0);
+
+                  return (
+                    <tr key={sale.id}>
+                      <td>
+                        <strong>#{sale.id.slice(0, 8).toUpperCase()}</strong>
+                      </td>
+                      <td>{sale.cashierEmail}</td>
+                      <td>
+                        <span className="pill">{sale.paymentMethod}</span>
+                      </td>
+                      <td>{itemsCount}</td>
+                      <td>{formatDate(sale.createdAt)}</td>
+                      <td>
+                        <strong>{formatMoney(sale.totalAmount)}</strong>
+                      </td>
+                      <td className="actions">
+                        <button
+                          className="receipt-btn"
+                          onClick={() => onViewReceipt(sale)}
+                          title="View & Print Receipt"
+                        >
+                          <Printer size={15} /> Receipt
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="pagination">
+            <span>
+              Page {sales.page} of {Math.max(1, Math.ceil(sales.totalCount / sales.pageSize))}
+            </span>
+            <div>
+              <button
+                className="icon-button"
+                disabled={sales.page <= 1}
+                onClick={() => void onPage(sales.page - 1)}
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                className="icon-button"
+                disabled={sales.page * sales.pageSize >= sales.totalCount}
+                onClick={() => void onPage(sales.page + 1)}
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </section>
   );
 }
