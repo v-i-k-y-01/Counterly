@@ -56,6 +56,16 @@ const moneyFormatter = new Intl.NumberFormat('en-IN', {
 const formatMoney = (value: number): string => moneyFormatter.format(value);
 
 /**
+ * Formats a Date instance as a local calendar date key (YYYY-MM-DD).
+ */
+const toLocalDateKey = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+/**
  * Formats an ISO date-time string into a human-readable representation.
  */
 const formatDate = (dateString: string): string => {
@@ -322,6 +332,68 @@ function AppShell() {
     }
   };
 
+  /**
+   * Rebuilds daily revenue grouped by the user's local calendar date from paginated sales
+   * when an older backend response omits `itemsSold` (and thus also lacks timezone grouping).
+   */
+  const enrichDailyRevenueItemsSold = async (revenue: DailyRevenue[]): Promise<DailyRevenue[]> => {
+    if (!revenue.length || revenue.every((row) => typeof row.itemsSold === 'number')) {
+      return revenue;
+    }
+
+    try {
+      const sortedDates = revenue.map((row) => row.date.slice(0, 10)).sort();
+      const firstDate = new Date(`${sortedDates[0]}T00:00:00Z`);
+      firstDate.setUTCDate(firstDate.getUTCDate() - 1);
+      const lastDate = new Date(`${sortedDates[sortedDates.length - 1]}T23:59:59.999Z`);
+      lastDate.setUTCDate(lastDate.getUTCDate() + 1);
+
+      const from = firstDate.toISOString();
+      const to = lastDate.toISOString();
+      const dailyTotals = new Map<string, DailyRevenue>();
+
+      let page = 1;
+      let totalLoaded = 0;
+      let totalCount = Infinity;
+
+      while (totalLoaded < totalCount && page <= 20) {
+        const result = await posApi.sales({ page, pageSize: 100, from, to });
+        totalCount = result.totalCount;
+        if (!result.items.length) break;
+
+        for (const sale of result.items) {
+          const dayKey = toLocalDateKey(new Date(sale.createdAt));
+          const saleItemsCount = sale.items.reduce((sum, line) => sum + line.quantity, 0);
+          const existing = dailyTotals.get(dayKey);
+
+          if (existing) {
+            existing.saleCount += 1;
+            existing.totalRevenue += sale.totalAmount;
+            existing.itemsSold += saleItemsCount;
+          } else {
+            dailyTotals.set(dayKey, {
+              date: dayKey,
+              saleCount: 1,
+              totalRevenue: sale.totalAmount,
+              itemsSold: saleItemsCount
+            });
+          }
+        }
+
+        totalLoaded += result.items.length;
+        page += 1;
+      }
+
+      if (!dailyTotals.size) {
+        return revenue;
+      }
+
+      return Array.from(dailyTotals.values()).sort((a, b) => a.date.localeCompare(b.date));
+    } catch {
+      return revenue;
+    }
+  };
+
   const loadViewData = async () => {
     setLoading(true);
     try {
@@ -332,9 +404,10 @@ function AppShell() {
           posApi.dailyRevenue(),
           posApi.topProducts()
         ]);
+        const enrichedRevenue = await enrichDailyRevenueItemsSold(revenue);
         setProducts(catalog);
         setCategories(groups);
-        setDailyRevenue(revenue);
+        setDailyRevenue(enrichedRevenue);
         setTopProducts(top);
       } else if (view === 'sales') {
         await fetchSalesData(1, salesStartDate, salesEndDate);
@@ -764,7 +837,7 @@ interface DashboardProps {
  */
 function Dashboard({ products, categories, revenue, top, onStartSale }: DashboardProps) {
   const today = new Date();
-  const todayDateString = today.toISOString().slice(0, 10);
+  const todayDateString = toLocalDateKey(today);
   const todayRevenueRecord = revenue.find((item) => item.date.slice(0, 10) === todayDateString);
   const totalRevenue = revenue.reduce((sum, item) => sum + item.totalRevenue, 0);
   const lowStockCount = products.filter((item) => item.stockQty < 6).length;
@@ -820,18 +893,30 @@ function Dashboard({ products, categories, revenue, top, onStartSale }: Dashboar
           {revenue.length ? (
             <div className="chart">
               {revenue.slice(-10).map((item) => {
-                const maxRevenue = Math.max(...revenue.map((row) => row.totalRevenue));
-                const barHeight = Math.max(12, (item.totalRevenue / maxRevenue) * 155);
+                const maxRevenue = Math.max(...revenue.map((row) => row.totalRevenue), 0);
+                const barHeight = maxRevenue > 0 ? Math.max(12, (item.totalRevenue / maxRevenue) * 155) : 12;
+                const itemsSold = item.itemsSold ?? 0;
+                const itemsLabel = `${itemsSold} ${itemsSold === 1 ? 'item' : 'items'} sold`;
 
                 return (
-                  <div className="bar-group" key={item.date}>
-                    <div
-                      className="bar"
-                      style={{ height: `${barHeight}px` }}
-                      title={formatMoney(item.totalRevenue)}
-                    />
+                  <div
+                    className="bar-group"
+                    key={item.date}
+                    tabIndex={0}
+                    aria-label={`${formatMoney(item.totalRevenue)}, ${itemsLabel}`}
+                  >
+                    <div className="bar-column">
+                      <div className="bar-tooltip" role="tooltip">
+                        <strong>{formatMoney(item.totalRevenue)}</strong>
+                        <span>{itemsLabel}</span>
+                      </div>
+                      <div
+                        className="bar"
+                        style={{ height: `${barHeight}px` }}
+                      />
+                    </div>
                     <small>
-                      {new Date(item.date).toLocaleDateString('en-IN', {
+                      {new Date(`${item.date.slice(0, 10)}T00:00:00`).toLocaleDateString('en-IN', {
                         day: 'numeric',
                         month: 'short'
                       })}

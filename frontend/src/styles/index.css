@@ -326,4 +326,100 @@ h1, h2, h3, p { margin: 0; } h1, h2, h3 { letter-spacing: -.035em; } .eyebrow { 
   @page { size: auto; margin: 0mm; }
 }
 
+/* Revenue Bar Chart Hover Tooltip */
+.bar-group {
+  position: relative;
+  cursor: pointer;
+  outline: none;
+}
+.bar-column {
+  position: relative;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.bar {
+  transition: transform .15s ease, filter .15s ease;
+}
+.bar-group:hover .bar,
+.bar-group:focus-visible .bar {
+  filter: brightness(1.08);
+  transform: translateY(-2px);
+}
+.bar-tooltip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: #242239;
+  color: #fff;
+  border-radius: 9px;
+  padding: 7px 11px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  z-index: 6;
+  box-shadow: 0 10px 24px rgba(36, 34, 57, 0.22);
+  transition: opacity .15s ease, transform .15s ease, visibility .15s ease;
+}
+.bar-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #242239;
+}
+.bar-tooltip strong {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.bar-tooltip span {
+  font-size: 11px;
+  color: #d4d1e3;
+  font-weight: 500;
+  line-height: 1.2;
+}
+.bar-group:hover .bar-tooltip,
+.bar-group:focus-visible .bar-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+@media (max-width: 720px) {
+  .bar-group:first-child .bar-tooltip {
+    left: 0;
+    transform: translateY(4px);
+  }
+  .bar-group:first-child:hover .bar-tooltip,
+  .bar-group:first-child:focus-visible .bar-tooltip {
+    transform: translateY(0);
+  }
+  .bar-group:first-child .bar-tooltip::after {
+    left: 16px;
+    transform: none;
+  }
+  .bar-group:last-child .bar-tooltip {
+    left: auto;
+    right: 0;
+    transform: translateY(4px);
+  }
+  .bar-group:last-child:hover .bar-tooltip,
+  .bar-group:last-child:focus-visible .bar-tooltip {
+    transform: translateY(0);
+  }
+  .bar-group:last-child .bar-tooltip::after {
+    left: auto;
+    right: 16px;
+    transform: none;
+  }
+}
+
 
