@@ -477,6 +477,23 @@ function AppShell() {
     });
   };
 
+  const requestDeleteBill = () => {
+    if (!cart.length) return;
+    const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+    setConfirmation({
+      title: 'Delete current bill?',
+      message: `Are you sure you want to delete this bill? All ${totalItems} item${totalItems === 1 ? '' : 's'} will be removed from the cart.`,
+      confirmLabel: 'Delete bill',
+      cancelLabel: 'Keep bill',
+      onConfirm: async () => {
+        setCart([]);
+        setConfirmation(null);
+        setNotice({ message: 'Bill deleted.' });
+      },
+      onCancel: () => setConfirmation(null)
+    });
+  };
+
   // Filter catalog based on search input matches
   const filteredCatalog = products.filter((p) =>
     `${p.name} ${p.sku}`.toLowerCase().includes(search.toLowerCase())
@@ -611,6 +628,7 @@ function AppShell() {
                 onQuantity={changeQuantity}
                 onCheckout={handleCheckout}
                 onNotice={setNotice}
+                onDeleteBill={requestDeleteBill}
               />
             )}
             {view === 'inventory' && (
@@ -913,6 +931,7 @@ interface CheckoutProps {
   onQuantity: (id: string, quantity: number) => void;
   onCheckout: (method: 'Cash' | 'Card' | 'Upi') => Promise<void>;
   onNotice: (notice: Notice) => void;
+  onDeleteBill: () => void;
 }
 
 /**
@@ -928,7 +947,8 @@ function Checkout({
   onAdd,
   onQuantity,
   onCheckout,
-  onNotice
+  onNotice,
+  onDeleteBill
 }: CheckoutProps) {
   const [paying, setPaying] = useState(false);
   const [barcodeInput, setBarcodeInput] = useState('');
@@ -1127,6 +1147,14 @@ function Checkout({
                   <button onClick={() => onQuantity(line.id, line.quantity + 1)}>+</button>
                 </div>
                 <b>{formatMoney(line.price * line.quantity)}</b>
+                <button
+                  type="button"
+                  className="cart-line-remove"
+                  onClick={() => onQuantity(line.id, 0)}
+                  title="Remove item from bill"
+                >
+                  <Trash2 size={13} />
+                </button>
               </div>
             ))
           ) : (
@@ -1144,16 +1172,26 @@ function Checkout({
         </div>
 
         <div className="payment-buttons">
-          <button disabled={!cart.length || paying} onClick={() => void handlePay('Cash')}>
+          <button className="pay-btn pay-cash" disabled={!cart.length || paying} onClick={() => void handlePay('Cash')}>
             <WalletCards size={18} /> Cash
           </button>
-          <button disabled={!cart.length || paying} onClick={() => void handlePay('Card')}>
+          <button className="pay-btn pay-card" disabled={!cart.length || paying} onClick={() => void handlePay('Card')}>
             <CreditCard size={18} /> Card
           </button>
-          <button disabled={!cart.length || paying} onClick={() => void handlePay('Upi')}>
+          <button className="pay-btn pay-upi" disabled={!cart.length || paying} onClick={() => void handlePay('Upi')}>
             <QrCode size={18} /> UPI
           </button>
         </div>
+
+        <button
+          type="button"
+          className="delete-bill-button"
+          disabled={!cart.length || paying}
+          onClick={onDeleteBill}
+          title="Delete current bill and clear cart"
+        >
+          <Trash2 size={15} /> Delete bill
+        </button>
       </aside>
     </div>
   );
