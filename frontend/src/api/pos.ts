@@ -139,18 +139,19 @@ export const posApi = {
   /**
    * Fetches paginated sales history, optionally filtered by date range.
    */
-  sales: (options?: number | { page?: number; from?: string; to?: string }) => {
+  sales: (options?: number | { page?: number; pageSize?: number; from?: string; to?: string }) => {
     const page = typeof options === 'number' ? options : options?.page ?? 1;
+    const pageSize = typeof options === 'object' ? options?.pageSize ?? 12 : 12;
     const from = typeof options === 'object' ? options?.from : undefined;
     const to = typeof options === 'object' ? options?.to : undefined;
-    return request<PagedResult<Sale>>(`/api/sales${buildQueryString({ page, pageSize: 12, from, to })}`);
+    return request<PagedResult<Sale>>(`/api/sales${buildQueryString({ page, pageSize, from, to })}`);
   },
 
   /**
-   * Retrieves daily revenue report data.
+   * Retrieves daily revenue report data grouped by the caller's local calendar dates.
    */
-  dailyRevenue: () =>
-    request<DailyRevenue[]>('/api/reports/daily-revenue'),
+  dailyRevenue: (tzOffsetMinutes = -new Date().getTimezoneOffset()) =>
+    request<DailyRevenue[]>(`/api/reports/daily-revenue${buildQueryString({ tzOffsetMinutes })}`),
 
   /**
    * Retrieves top selling products report.

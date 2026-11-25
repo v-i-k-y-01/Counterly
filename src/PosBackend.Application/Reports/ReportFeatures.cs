@@ -10,7 +10,8 @@ namespace PosBackend.Application.Reports;
 /// <param name="Date">The calendar date of the record.</param>
 /// <param name="SaleCount">The number of individual sales transactions settled on this date.</param>
 /// <param name="TotalRevenue">The sum total revenue accumulated on this date.</param>
-public sealed record DailyRevenueDto(DateOnly Date, int SaleCount, decimal TotalRevenue);
+/// <param name="ItemsSold">The total quantity of items sold across all transactions on this date.</param>
+public sealed record DailyRevenueDto(DateOnly Date, int SaleCount, decimal TotalRevenue, int ItemsSold);
 
 /// <summary>
 /// Data transfer object carrying transaction totals for a product.
@@ -26,7 +27,11 @@ public sealed record TopProductDto(Guid ProductId, string ProductName, int Quant
 /// </summary>
 /// <param name="From">Optional starting date boundary (inclusive).</param>
 /// <param name="To">Optional ending date boundary (inclusive).</param>
-public sealed record GetDailyRevenueQuery(DateOnly? From = null, DateOnly? To = null) : IRequest<IReadOnlyList<DailyRevenueDto>>;
+/// <param name="TzOffsetMinutes">Client timezone offset from UTC in minutes (e.g., 330 for UTC+05:30).</param>
+public sealed record GetDailyRevenueQuery(
+    DateOnly? From = null,
+    DateOnly? To = null,
+    int TzOffsetMinutes = 0) : IRequest<IReadOnlyList<DailyRevenueDto>>;
 
 /// <summary>
 /// Query to retrieve the top performing products based on units sold.
@@ -58,42 +63,65 @@ public sealed class ReportHandlers :
     }
 
     /// <summary>
-    /// Handles daily revenue queries for the active store. Groups sale transaction total amounts by calendar date.
+    /// Handles daily revenue queries for the active store. Groups sale transaction total amounts and sold item counts by calendar date in the caller's timezone.
     /// </summary>
     public async Task<IReadOnlyList<DailyRevenueDto>> Handle(GetDailyRevenueQuery request, CancellationToken cancellationToken)
     {
         var storeId = _currentUserService.StoreId;
+        var offsetMinutes = Math.Clamp(request.TzOffsetMinutes, -720, 840);
+
+        // Convert local DateOnly boundaries to UTC DateTime values using the caller's UTC offset.
+        DateTime? startDateTimeUtc = request.From.HasValue
+            ? request.From.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc).AddMinutes(-offsetMinutes)
+            : null;
+        DateTime? endDateTimeUtc = request.To.HasValue
+            ? request.To.Value.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc).AddMinutes(-offsetMinutes)
+            : null;
 
         var salesQuery = _dbContext.Sales
             .AsNoTracking()
-            .Where(sale => sale.StoreId == storeId)
-            .AsQueryable();
+            .Where(sale => sale.StoreId == storeId);
 
-        // Apply starting boundary filter.
-        // Convert DateOnly to a UTC DateTime representing the start of that day.
-        if (request.From.HasValue)
+        var saleItemsQuery = _dbContext.SaleItems
+            .AsNoTracking()
+            .Where(item => item.Sale!.StoreId == storeId);
+
+        if (startDateTimeUtc.HasValue)
         {
-            var startDateTimeUtc = request.From.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-            salesQuery = salesQuery.Where(sale => sale.CreatedAt >= startDateTimeUtc);
+            salesQuery = salesQuery.Where(sale => sale.CreatedAt >= startDateTimeUtc.Value);
+            saleItemsQuery = saleItemsQuery.Where(item => item.Sale!.CreatedAt >= startDateTimeUtc.Value);
         }
 
-        // Apply ending boundary filter.
-        // Add 1 day to make the filter inclusive of the specified day (up to the very beginning of the next day).
-        if (request.To.HasValue)
+        if (endDateTimeUtc.HasValue)
         {
-            var endDateTimeUtc = request.To.Value.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-            salesQuery = salesQuery.Where(sale => sale.CreatedAt < endDateTimeUtc);
+            salesQuery = salesQuery.Where(sale => sale.CreatedAt < endDateTimeUtc.Value);
+            saleItemsQuery = saleItemsQuery.Where(item => item.Sale!.CreatedAt < endDateTimeUtc.Value);
         }
 
-        // Group sales by their calendar date and sum up transactions.
-        return await salesQuery
-            .GroupBy(sale => DateOnly.FromDateTime(sale.CreatedAt))
+        var salesRows = await salesQuery
+            .Select(sale => new { sale.CreatedAt, sale.TotalAmount })
+            .ToListAsync(cancellationToken);
+
+        var saleItemRows = await saleItemsQuery
+            .Select(item => new { item.Sale!.CreatedAt, item.Quantity })
+            .ToListAsync(cancellationToken);
+
+        static DateOnly ToOffsetDate(DateTime utcDateTime, int tzOffsetMinutes) =>
+            DateOnly.FromDateTime(DateTime.SpecifyKind(utcDateTime, DateTimeKind.Utc).AddMinutes(tzOffsetMinutes));
+
+        var dailyItemsSold = saleItemRows
+            .GroupBy(item => ToOffsetDate(item.CreatedAt, offsetMinutes))
+            .ToDictionary(group => group.Key, group => group.Sum(item => item.Quantity));
+
+        return salesRows
+            .GroupBy(sale => ToOffsetDate(sale.CreatedAt, offsetMinutes))
             .OrderBy(group => group.Key)
             .Select(group => new DailyRevenueDto(
                 group.Key,
                 group.Count(),
-                group.Sum(sale => sale.TotalAmount)))
-            .ToListAsync(cancellationToken);
+                group.Sum(sale => sale.TotalAmount),
+                dailyItemsSold.GetValueOrDefault(group.Key, 0)))
+            .ToList();
     }
 
     /// <summary>

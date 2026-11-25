@@ -7,5 +7,5 @@ export type CartLine = Product & { quantity: number };
 export type SaleItem = { productId: string; productName: string; quantity: number; unitPrice: number; subtotal: number };
 export type Sale = { id: string; cashierId: string; cashierEmail: string; totalAmount: number; paymentMethod: string; createdAt: string; items: SaleItem[] };
 export type PagedResult<T> = { items: T[]; page: number; pageSize: number; totalCount: number };
-export type DailyRevenue = { date: string; saleCount: number; totalRevenue: number };
+export type DailyRevenue = { date: string; saleCount: number; totalRevenue: number; itemsSold: number };
 export type TopProduct = { productId: string; productName: string; quantitySold: number; revenue: number };
