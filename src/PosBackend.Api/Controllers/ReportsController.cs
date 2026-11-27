@@ -31,6 +31,7 @@ public sealed class ReportsController : ControllerBase
     /// </summary>
     /// <param name="from">Optional starting DateOnly boundary.</param>
     /// <param name="to">Optional ending DateOnly boundary.</param>
+    /// <param name="tzOffsetMinutes">Client timezone offset from UTC in minutes (e.g., 330 for IST +05:30).</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>A list of daily revenue records.</returns>
     [HttpGet("daily-revenue")]
@@ -38,9 +39,10 @@ public sealed class ReportsController : ControllerBase
     public async Task<ActionResult<IReadOnlyList<DailyRevenueDto>>> Daily(
         [FromQuery] DateOnly? from,
         [FromQuery] DateOnly? to,
-        CancellationToken cancellationToken)
+        [FromQuery] int tzOffsetMinutes = 0,
+        CancellationToken cancellationToken = default)
     {
-        var dailyRevenue = await _sender.Send(new GetDailyRevenueQuery(from, to), cancellationToken);
+        var dailyRevenue = await _sender.Send(new GetDailyRevenueQuery(from, to, tzOffsetMinutes), cancellationToken);
         return Ok(dailyRevenue);
     }
 
