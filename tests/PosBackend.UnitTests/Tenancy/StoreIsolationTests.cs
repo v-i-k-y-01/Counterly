@@ -1,5 +1,7 @@
+using System.IdentityModel.Tokens.Jwt;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using PosBackend.Application.Auth.Commands;
 using PosBackend.Application.Categories;
 using PosBackend.Application.Common.Exceptions;
@@ -10,6 +12,7 @@ using PosBackend.Application.Sales;
 using PosBackend.Application.Users.Commands;
 using PosBackend.Domain.Entities;
 using PosBackend.Domain.Enums;
+using PosBackend.Infrastructure.Authentication;
 using PosBackend.Infrastructure.Persistence;
 using PosBackend.UnitTests.Common;
 using Xunit;
@@ -184,5 +187,61 @@ public class StoreIsolationTests
         // Assert
         cashierResponse.StoreId.Should().Be(storeId);
         cashierResponse.Role.Should().Be(UserRole.Cashier.ToString());
+        cashierResponse.FirstName.Should().BeNull();
+        cashierResponse.LastName.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task InvitedCashier_WithoutName_CanCompleteProfileAndSeeNamesOnSaleReceipt()
+    {
+        // Arrange
+        using var dbContext = CreateInMemoryDbContext();
+        var hasher = new MockPasswordHasher();
+        var jwtOptions = Options.Create(new JwtOptions
+        {
+            Issuer = "TestIssuer",
+            Audience = "TestAudience",
+            Key = "SuperSecretSigningKeyMustBeVeryLong32Chars!",
+            ExpiryMinutes = 30,
+            RefreshTokenExpiryDays = 5
+        });
+        var tokenService = new JwtTokenService(jwtOptions);
+
+        var registerHandler = new RegisterOwnerCommandHandler(dbContext, hasher);
+        var owner = await registerHandler.Handle(
+            new RegisterOwnerCommand("owner@freshmart.com", "Password123!", "Fresh Mart", "Vinush", "Sadayappan"),
+            CancellationToken.None);
+
+        var ownerContext = new TestCurrentUserService { StoreId = owner.StoreId, UserId = owner.Id, IsOwner = true };
+        var inviteHandler = new CreateCashierCommandHandler(dbContext, hasher, ownerContext);
+        var cashier = await inviteHandler.Handle(new CreateCashierCommand("cashier@freshmart.com", "Password123!"), CancellationToken.None);
+
+        // Login before name completion succeeds with nullable name claims omitted
+        var loginHandler = new LoginCommandHandler(dbContext, hasher, tokenService);
+        var initialTokens = await loginHandler.Handle(new LoginCommand("cashier@freshmart.com", "Password123!"), CancellationToken.None);
+        var initialJwt = new JwtSecurityTokenHandler().ReadJwtToken(initialTokens.AccessToken);
+        initialJwt.Claims.Should().NotContain(c => c.Type == JwtRegisteredClaimNames.GivenName);
+        initialJwt.Claims.First(c => c.Type == "store_name").Value.Should().Be("Fresh Mart");
+
+        // Act: Invited cashier completes first & last name after login
+        var cashierContext = new TestCurrentUserService { StoreId = owner.StoreId, UserId = cashier.Id, IsOwner = false };
+        var updateNameHandler = new UpdateUserNameCommandHandler(dbContext, cashierContext, tokenService);
+        var updatedTokens = await updateNameHandler.Handle(new UpdateUserNameCommand("Asha", "Rao"), CancellationToken.None);
+
+        var updatedJwt = new JwtSecurityTokenHandler().ReadJwtToken(updatedTokens.AccessToken);
+        updatedJwt.Claims.First(c => c.Type == JwtRegisteredClaimNames.GivenName).Value.Should().Be("Asha");
+        updatedJwt.Claims.First(c => c.Type == JwtRegisteredClaimNames.FamilyName).Value.Should().Be("Rao");
+        updatedJwt.Claims.First(c => c.Type == JwtRegisteredClaimNames.Name).Value.Should().Be("Asha Rao");
+
+        // Create product and ring up sale as cashier
+        var productHandler = new ProductHandlers(dbContext, ownerContext);
+        var product = await productHandler.Handle(new CreateProductCommand(null, "Coffee", "COF-1", 80m, 10), CancellationToken.None);
+
+        var saleHandler = new SaleHandlers(dbContext, cashierContext);
+        var sale = await saleHandler.Handle(new CreateSaleCommand(PaymentMethod.Cash, new[] { new SaleLineRequest(product.Id, 1) }), CancellationToken.None);
+
+        // Assert receipt DTO includes cashier full name and store name
+        sale.CashierName.Should().Be("Asha Rao");
+        sale.StoreName.Should().Be("Fresh Mart");
     }
 }

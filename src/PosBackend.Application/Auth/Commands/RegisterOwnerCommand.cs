@@ -15,7 +15,14 @@ namespace PosBackend.Application.Auth.Commands;
 /// <param name="Email">The requested email address for the owner account.</param>
 /// <param name="Password">The desired plain text password (minimum 8 characters).</param>
 /// <param name="StoreName">Optional name of the store/business (defaults to 'My Store').</param>
-public sealed record RegisterOwnerCommand(string Email, string Password, string? StoreName = null) : IRequest<UserResponse>;
+/// <param name="FirstName">The owner's first name.</param>
+/// <param name="LastName">The owner's last name.</param>
+public sealed record RegisterOwnerCommand(
+    string Email,
+    string Password,
+    string? StoreName = null,
+    string? FirstName = null,
+    string? LastName = null) : IRequest<UserResponse>;
 
 /// <summary>
 /// Validator governing rules for owner registration.
@@ -24,7 +31,7 @@ public sealed class RegisterOwnerCommandValidator : AbstractValidator<RegisterOw
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="RegisterOwnerCommandValidator"/> class.
-    /// Defines validation requirements for owner email, password, and store name.
+    /// Defines validation requirements for owner email, password, name, and store name.
     /// </summary>
     public RegisterOwnerCommandValidator()
     {
@@ -40,6 +47,14 @@ public sealed class RegisterOwnerCommandValidator : AbstractValidator<RegisterOw
 
         RuleFor(command => command.StoreName)
             .MaximumLength(200).WithMessage("Store name cannot exceed 200 characters.");
+
+        RuleFor(command => command.FirstName)
+            .NotEmpty().WithMessage("First name is required.")
+            .MaximumLength(100).WithMessage("First name cannot exceed 100 characters.");
+
+        RuleFor(command => command.LastName)
+            .NotEmpty().WithMessage("Last name is required.")
+            .MaximumLength(100).WithMessage("Last name cannot exceed 100 characters.");
     }
 }
 
@@ -92,10 +107,20 @@ public sealed class RegisterOwnerCommandHandler : IRequestHandler<RegisterOwnerC
             CreatedAt = DateTime.UtcNow
         };
 
+        var firstName = string.IsNullOrWhiteSpace(request.FirstName)
+            ? null
+            : request.FirstName.Trim();
+
+        var lastName = string.IsNullOrWhiteSpace(request.LastName)
+            ? null
+            : request.LastName.Trim();
+
         var newUser = new User
         {
             Id = Guid.NewGuid(),
             Email = normalizedEmail,
+            FirstName = firstName,
+            LastName = lastName,
             PasswordHash = _passwordHasher.Hash(request.Password),
             Role = UserRole.Owner,
             StoreId = store.Id,
@@ -113,6 +138,8 @@ public sealed class RegisterOwnerCommandHandler : IRequestHandler<RegisterOwnerC
             newUser.Role.ToString(),
             newUser.StoreId,
             newUser.CreatedAt,
-            store.Name);
+            store.Name,
+            newUser.FirstName,
+            newUser.LastName);
     }
 }

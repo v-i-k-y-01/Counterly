@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using PosBackend.Application.Auth.Commands;
@@ -7,7 +8,7 @@ using PosBackend.Application.Auth.Dtos;
 namespace PosBackend.Api.Controllers;
 
 /// <summary>
-/// Handles authentication endpoints such as owner registration and login.
+/// Handles authentication endpoints such as owner registration, login, and profile name completion.
 /// </summary>
 [ApiController]
 [Route("api/auth")]
@@ -27,7 +28,7 @@ public sealed class AuthController : ControllerBase
     /// <summary>
     /// Registers the initial Owner account for the Point-of-Sale shop.
     /// </summary>
-    /// <param name="request">Payload carrying the email and password for the owner.</param>
+    /// <param name="request">Payload carrying the email, password, name, and store details for the owner.</param>
     /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
     /// <returns>The details of the created owner account.</returns>
     [HttpPost("register")]
@@ -37,7 +38,7 @@ public sealed class AuthController : ControllerBase
     public async Task<ActionResult<UserResponse>> Register(RegisterRequest request, CancellationToken cancellationToken)
     {
         var registeredUser = await _sender.Send(
-            new RegisterOwnerCommand(request.Email, request.Password, request.StoreName),
+            new RegisterOwnerCommand(request.Email, request.Password, request.StoreName, request.FirstName, request.LastName),
             cancellationToken);
 
         return Created(string.Empty, registeredUser);
@@ -60,6 +61,26 @@ public sealed class AuthController : ControllerBase
 
         return Ok(tokenResponse);
     }
+
+    /// <summary>
+    /// Saves the authenticated user's first and last name and returns refreshed JWTs containing the name claims.
+    /// </summary>
+    /// <param name="request">Payload carrying the user's first and last name.</param>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
+    /// <returns>Refreshed access and refresh tokens with updated profile claims.</returns>
+    [Authorize]
+    [HttpPut("profile")]
+    [ProducesResponseType(typeof(TokenResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<TokenResponse>> UpdateProfileName(UpdateProfileNameRequest request, CancellationToken cancellationToken)
+    {
+        var tokenResponse = await _sender.Send(
+            new UpdateUserNameCommand(request.FirstName, request.LastName),
+            cancellationToken);
+
+        return Ok(tokenResponse);
+    }
 }
 
 /// <summary>
@@ -68,7 +89,14 @@ public sealed class AuthController : ControllerBase
 /// <param name="Email">The requested email address.</param>
 /// <param name="Password">The desired secure password.</param>
 /// <param name="StoreName">Optional name of the business/store.</param>
-public sealed record RegisterRequest(string Email, string Password, string? StoreName = null);
+/// <param name="FirstName">The owner's first name.</param>
+/// <param name="LastName">The owner's last name.</param>
+public sealed record RegisterRequest(
+    string Email,
+    string Password,
+    string? StoreName = null,
+    string? FirstName = null,
+    string? LastName = null);
 
 /// <summary>
 /// Request contract for login authentication.
@@ -76,3 +104,10 @@ public sealed record RegisterRequest(string Email, string Password, string? Stor
 /// <param name="Email">The user's email address.</param>
 /// <param name="Password">The user's password.</param>
 public sealed record LoginRequest(string Email, string Password);
+
+/// <summary>
+/// Request contract for completing or updating the authenticated user's first and last name.
+/// </summary>
+/// <param name="FirstName">The user's first name.</param>
+/// <param name="LastName">The user's last name.</param>
+public sealed record UpdateProfileNameRequest(string FirstName, string LastName);

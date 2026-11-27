@@ -41,6 +41,8 @@ public sealed record SaleItemDto(
 /// <param name="PaymentMethod">The payment method used (Cash, Card, UPI).</param>
 /// <param name="CreatedAt">The timestamp in UTC when the sale occurred.</param>
 /// <param name="Items">List of itemized lines included in this sale.</param>
+/// <param name="CashierName">Optional full name of the cashier user.</param>
+/// <param name="StoreName">Optional name of the store where the sale occurred.</param>
 public sealed record SaleDto(
     Guid Id,
     Guid CashierId,
@@ -48,7 +50,9 @@ public sealed record SaleDto(
     decimal TotalAmount,
     string PaymentMethod,
     DateTime CreatedAt,
-    IReadOnlyList<SaleItemDto> Items
+    IReadOnlyList<SaleItemDto> Items,
+    string? CashierName = null,
+    string? StoreName = null
 );
 
 /// <summary>
@@ -158,7 +162,7 @@ public sealed class SaleHandlers :
     /// <summary>
     /// Maps a domain Sale entity to a SaleDto.
     /// </summary>
-    private static SaleDto MapToDto(Sale sale)
+    private static SaleDto MapToDto(Sale sale, string? storeName = null)
     {
         var itemDtos = sale.Items
             .Select(item => new SaleItemDto(
@@ -176,7 +180,9 @@ public sealed class SaleHandlers :
             sale.TotalAmount,
             sale.PaymentMethod.ToString(),
             sale.CreatedAt,
-            itemDtos);
+            itemDtos,
+            sale.Cashier?.GetFullName(),
+            storeName ?? sale.Store?.Name);
     }
 
     /// <summary>
@@ -252,11 +258,17 @@ public sealed class SaleHandlers :
             _dbContext.Sales.Add(sale);
             await _dbContext.SaveChangesAsync(transactionToken);
 
-            // Populate cashier navigation properties for mapped response.
+            // Populate cashier navigation property and store name for mapped response.
             sale.Cashier = await _dbContext.Users
                 .FindAsync(new object[] { sale.CashierId }, transactionToken);
 
-            return MapToDto(sale);
+            var storeName = await _dbContext.Stores
+                .AsNoTracking()
+                .Where(s => s.Id == storeId)
+                .Select(s => s.Name)
+                .FirstOrDefaultAsync(transactionToken);
+
+            return MapToDto(sale, storeName);
         }, cancellationToken);
     }
 
@@ -301,7 +313,13 @@ public sealed class SaleHandlers :
             .Take(request.PageSize)
             .ToListAsync(cancellationToken);
 
-        var saleDtos = salesList.Select(MapToDto).ToList();
+        var storeName = await _dbContext.Stores
+            .AsNoTracking()
+            .Where(s => s.Id == storeId)
+            .Select(s => s.Name)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var saleDtos = salesList.Select(sale => MapToDto(sale, storeName)).ToList();
         return new PagedResult<SaleDto>(saleDtos, request.Page, request.PageSize, totalCount);
     }
 
@@ -332,6 +350,12 @@ public sealed class SaleHandlers :
             throw new NotFoundException("Sale", request.Id);
         }
 
-        return MapToDto(sale);
+        var storeName = await _dbContext.Stores
+            .AsNoTracking()
+            .Where(s => s.Id == storeId)
+            .Select(s => s.Name)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return MapToDto(sale, storeName);
     }
 }

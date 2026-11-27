@@ -1,4 +1,5 @@
 using FluentAssertions;
+using PosBackend.Application.Auth.Commands;
 using PosBackend.Application.Products;
 using PosBackend.Application.Sales;
 using PosBackend.Domain.Enums;
@@ -88,5 +89,31 @@ public class RequestValidatorTests
         // Assert
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(x => x.PropertyName.Contains("Quantity"));
+    }
+
+    [Fact]
+    public void RegisterOwnerValidator_ShouldRequireFirstAndLastName()
+    {
+        var validator = new RegisterOwnerCommandValidator();
+
+        var invalid = validator.Validate(new RegisterOwnerCommand("owner@store.com", "Password123!", "My Store", "", ""));
+        invalid.IsValid.Should().BeFalse();
+        invalid.Errors.Should().Contain(x => x.PropertyName == nameof(RegisterOwnerCommand.FirstName));
+        invalid.Errors.Should().Contain(x => x.PropertyName == nameof(RegisterOwnerCommand.LastName));
+
+        var valid = validator.Validate(new RegisterOwnerCommand("owner@store.com", "Password123!", "My Store", "Vinush", "Sadayappan"));
+        valid.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void UpdateUserNameValidator_ShouldRequireFirstAndLastName()
+    {
+        var validator = new UpdateUserNameCommandValidator();
+
+        var invalid = validator.Validate(new UpdateUserNameCommand("", " "));
+        invalid.IsValid.Should().BeFalse();
+
+        var valid = validator.Validate(new UpdateUserNameCommand("Asha", "Rao"));
+        valid.IsValid.Should().BeTrue();
     }
 }

@@ -15,6 +15,16 @@ public class User : BaseEntity
     public string Email { get; set; } = null!;
 
     /// <summary>
+    /// Gets or sets the user's first name (nullable for legacy or invited accounts pending profile completion).
+    /// </summary>
+    public string? FirstName { get; set; }
+
+    /// <summary>
+    /// Gets or sets the user's last name (nullable for legacy or invited accounts pending profile completion).
+    /// </summary>
+    public string? LastName { get; set; }
+
+    /// <summary>
     /// Gets or sets the secure salted BCrypt hash of the user's password.
     /// </summary>
     public string PasswordHash { get; set; } = null!;
@@ -44,4 +54,16 @@ public class User : BaseEntity
     /// Primarily used for tracking sales associated with a cashier.
     /// </summary>
     public ICollection<Sale> Sales { get; set; } = new List<Sale>();
+
+    /// <summary>
+    /// Returns the user's trimmed full name, or null when neither first nor last name is set.
+    /// </summary>
+    public string? GetFullName()
+    {
+        var parts = new[] { FirstName?.Trim(), LastName?.Trim() }
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .ToArray();
+
+        return parts.Length > 0 ? string.Join(" ", parts) : null;
+    }
 }

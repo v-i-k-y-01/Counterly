@@ -132,6 +132,8 @@ function LoginScreen() {
   const { login } = useAuth();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [storeName, setStoreName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -145,10 +147,17 @@ function LoginScreen() {
     try {
       if (mode === 'register') {
         const trimmedStore = storeName.trim();
+        const trimmedFirstName = firstName.trim();
+        const trimmedLastName = lastName.trim();
+        if (!trimmedFirstName || !trimmedLastName) {
+          setError('First name and last name are required.');
+          setBusy(false);
+          return;
+        }
         if (trimmedStore) {
           localStorage.setItem('pos.storeName', trimmedStore);
         }
-        await posApi.register(email, password, trimmedStore || undefined);
+        await posApi.register(email, password, trimmedStore || undefined, trimmedFirstName, trimmedLastName);
       }
       await login(email, password);
     } catch (exception) {
@@ -182,16 +191,42 @@ function LoginScreen() {
 
           <form onSubmit={handleSubmit}>
             {mode === 'register' && (
-              <label>
-                Store / Business Name
-                <input
-                  type="text"
-                  placeholder="e.g., Downtown Bakery, Luxe Apparel"
-                  value={storeName}
-                  onChange={(event) => setStoreName(event.target.value)}
-                  maxLength={200}
-                />
-              </label>
+              <>
+                <label>
+                  Store / Business Name
+                  <input
+                    type="text"
+                    placeholder="e.g., Downtown Bakery, Luxe Apparel"
+                    value={storeName}
+                    onChange={(event) => setStoreName(event.target.value)}
+                    maxLength={200}
+                  />
+                </label>
+                <div className="form-row">
+                  <label>
+                    First name
+                    <input
+                      type="text"
+                      placeholder="First name"
+                      value={firstName}
+                      onChange={(event) => setFirstName(event.target.value)}
+                      required
+                      maxLength={100}
+                    />
+                  </label>
+                  <label>
+                    Last name
+                    <input
+                      type="text"
+                      placeholder="Last name"
+                      value={lastName}
+                      onChange={(event) => setLastName(event.target.value)}
+                      required
+                      maxLength={100}
+                    />
+                  </label>
+                </div>
+              </>
             )}
             <label>
               Email address
@@ -530,9 +565,9 @@ function AppShell() {
         </nav>
 
         <div className="sidebar-user">
-          <div className="avatar">{session?.email[0].toUpperCase()}</div>
+          <div className="avatar">{(session?.fullName?.[0] ?? session?.email[0] ?? 'U').toUpperCase()}</div>
           <div>
-            <strong>{session?.email.split('@')[0]}</strong>
+            <strong>{session?.fullName || session?.email.split('@')[0]}</strong>
             <span>{session?.role}{session?.storeName ? ` • ${session.storeName}` : ''}</span>
           </div>
           <button className="icon-button" title="Sign out" onClick={logout}>
@@ -1446,7 +1481,7 @@ function SalesHistory({ sales, startDate, endDate, onDateFilterChange, onPage, o
                       <td>
                         <strong>#{sale.id.slice(0, 8).toUpperCase()}</strong>
                       </td>
-                      <td>{sale.cashierEmail}</td>
+                      <td>{sale.cashierName || sale.cashierEmail}</td>
                       <td>
                         <span className="pill">{sale.paymentMethod}</span>
                       </td>
@@ -1795,9 +1830,108 @@ function ConfirmModal({
 }
 
 /**
- * Main application router selecting between login screen and app shell context.
+ * Onboarding prompt shown after login when an invited or legacy user has no first/last name on record.
+ */
+function CompleteProfileScreen() {
+  const { session, completeProfileName, logout } = useAuth();
+  const [firstName, setFirstName] = useState(session?.firstName ?? '');
+  const [lastName, setLastName] = useState(session?.lastName ?? '');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const trimmedFirst = firstName.trim();
+    const trimmedLast = lastName.trim();
+    if (!trimmedFirst || !trimmedLast) {
+      setError('Please enter both your first name and last name.');
+      return;
+    }
+
+    setBusy(true);
+    setError('');
+    try {
+      await completeProfileName(trimmedFirst, trimmedLast);
+    } catch (exception) {
+      setError(exception instanceof Error ? exception.message : 'Unable to save your name.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <main className="auth-page">
+      <section className="auth-intro">
+        <div className="brand-mark">
+          <ShoppingBag size={25} />
+        </div>
+        <p className="eyebrow">ALMOST THERE</p>
+        <h1>Tell us your name.</h1>
+        <p>Your name will appear on customer receipts and team activity across {session?.storeName || 'your store'}.</p>
+        <div className="intro-card">
+          <CheckCircle2 size={18} /> Signed in as {session?.email}
+        </div>
+      </section>
+
+      <section className="auth-panel">
+        <div className="auth-card">
+          <div>
+            <p className="eyebrow">COMPLETE YOUR PROFILE</p>
+            <h2>Welcome to {session?.storeName || 'Counterly'}</h2>
+            <p>Enter your first and last name to finish signing in.</p>
+          </div>
+
+          <form onSubmit={handleSubmit}>
+            <div className="form-row">
+              <label>
+                First name
+                <input
+                  type="text"
+                  placeholder="First name"
+                  value={firstName}
+                  onChange={(event) => setFirstName(event.target.value)}
+                  required
+                  maxLength={100}
+                  autoFocus
+                />
+              </label>
+              <label>
+                Last name
+                <input
+                  type="text"
+                  placeholder="Last name"
+                  value={lastName}
+                  onChange={(event) => setLastName(event.target.value)}
+                  required
+                  maxLength={100}
+                />
+              </label>
+            </div>
+            {error && <p className="form-error">{error}</p>}
+            <button className="primary-button full" disabled={busy}>
+              {busy ? 'Saving…' : 'Save & continue'}
+            </button>
+          </form>
+
+          <button className="text-button" onClick={logout}>
+            Sign in with a different account
+          </button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+/**
+ * Main application router selecting between login screen, profile completion, and app shell context.
  */
 export default function App() {
   const { session } = useAuth();
-  return session ? <AppShell /> : <LoginScreen />;
+  if (!session) {
+    return <LoginScreen />;
+  }
+  if (session.needsProfileName) {
+    return <CompleteProfileScreen />;
+  }
+  return <AppShell />;
 }

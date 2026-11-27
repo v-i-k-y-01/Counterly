@@ -32,10 +32,19 @@ export const posApi = {
   /**
    * Registers a new owner account and creates their isolated store.
    */
-  register: (email: string, password: string, storeName?: string) =>
+  register: (email: string, password: string, storeName?: string, firstName?: string, lastName?: string) =>
     request<User>('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, storeName })
+      body: JSON.stringify({ email, password, storeName, firstName, lastName })
+    }),
+
+  /**
+   * Saves the authenticated user's first and last name and returns refreshed tokens.
+   */
+  updateProfileName: (firstName: string, lastName: string) =>
+    request<TokenResponse>('/api/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify({ firstName, lastName })
     }),
 
   /**
