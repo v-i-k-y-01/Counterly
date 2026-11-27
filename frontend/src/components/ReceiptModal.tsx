@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { CheckCircle2, Printer, ShoppingBag, X } from 'lucide-react';
 import type { Sale } from '../api/types';
+import { useAuth } from '../auth/AuthContext';
 
 interface ReceiptModalProps {
   sale: Sale | null;
@@ -33,14 +34,11 @@ const formatDate = (dateString: string): string => {
  * Modal component for viewing and printing customer sales receipts / bills.
  */
 export function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
-  if (!sale) return null;
+  const { session } = useAuth();
 
-  const handlePrint = () => {
-    window.print();
-  };
-
-  // Allow Esc key to close and Enter to print
+  // Allow Esc key to close
   useEffect(() => {
+    if (!sale) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         onClose();
@@ -49,9 +47,17 @@ export function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [sale, onClose]);
+
+  if (!sale) return null;
+
+  const handlePrint = () => {
+    window.print();
+  };
 
   const totalItemCount = sale.items.reduce((sum, item) => sum + item.quantity, 0);
+  const storeDisplayName = sale.storeName?.trim() || session?.storeName?.trim() || 'COUNTERLY POS';
+  const cashierDisplayName = sale.cashierName?.trim() || sale.cashierEmail.split('@')[0];
 
   return (
     <div className="modal-backdrop receipt-backdrop" onMouseDown={onClose}>
@@ -83,7 +89,7 @@ export function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
             <div className="receipt-logo">
               <ShoppingBag size={24} />
             </div>
-            <h3 className="store-name">COUNTERLY POS</h3>
+            <h3 className="store-name">{storeDisplayName}</h3>
             <p className="store-tagline">Retail Store & Checkout</p>
             <div className="receipt-badge">TAX INVOICE / BILL</div>
           </div>
@@ -101,7 +107,7 @@ export function ReceiptModal({ sale, onClose }: ReceiptModalProps) {
             </div>
             <div className="meta-row">
               <span>Cashier:</span>
-              <span>{sale.cashierEmail.split('@')[0]}</span>
+              <span>{cashierDisplayName}</span>
             </div>
             <div className="meta-row">
               <span>Payment Mode:</span>

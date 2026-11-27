@@ -72,6 +72,22 @@ public sealed class JwtTokenService : ITokenService
             claims.Add(new Claim("store_name", user.Store.Name));
         }
 
+        if (!string.IsNullOrWhiteSpace(user.FirstName))
+        {
+            claims.Add(new Claim(JwtRegisteredClaimNames.GivenName, user.FirstName.Trim()));
+        }
+
+        if (!string.IsNullOrWhiteSpace(user.LastName))
+        {
+            claims.Add(new Claim(JwtRegisteredClaimNames.FamilyName, user.LastName.Trim()));
+        }
+
+        var fullName = user.GetFullName();
+        if (!string.IsNullOrWhiteSpace(fullName))
+        {
+            claims.Add(new Claim(JwtRegisteredClaimNames.Name, fullName));
+        }
+
         var securityToken = new JwtSecurityToken(
             issuer: _options.Issuer,
             audience: _options.Audience,

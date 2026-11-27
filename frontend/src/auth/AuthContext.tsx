@@ -9,6 +9,10 @@ type Session = {
   email: string;
   role: Role;
   storeName?: string;
+  firstName?: string;
+  lastName?: string;
+  fullName?: string;
+  needsProfileName: boolean;
 } | null;
 
 /**
@@ -17,14 +21,19 @@ type Session = {
 type AuthContextValue = {
   session: Session;
   login: (email: string, password: string) => Promise<void>;
+  completeProfileName: (firstName: string, lastName: string) => Promise<void>;
   logout: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+const normalizeClaim = (value: unknown): string | undefined => {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+};
+
 /**
  * Extracts and decodes user session details from the stored JWT access token payload.
- * @returns The parsed session containing user email and role, or null if token is missing/invalid.
+ * @returns The parsed session containing user email, role, storeName, and optional name fields, or null if token is missing/invalid.
  */
 function readSessionFromToken(): Session {
   const token = localStorage.getItem('pos.accessToken');
@@ -49,12 +58,30 @@ function readSessionFromToken(): Session {
       ?? decodedPayload.unique_name 
       ?? 'Team member';
 
-    const storeName = decodedPayload.store_name 
-      ?? decodedPayload.storeName 
-      ?? localStorage.getItem('pos.storeName') 
-      ?? undefined;
+    const storeName = normalizeClaim(decodedPayload.store_name)
+      ?? normalizeClaim(decodedPayload.storeName)
+      ?? normalizeClaim(localStorage.getItem('pos.storeName'));
 
-    return { email, role, storeName };
+    const firstName = normalizeClaim(decodedPayload.given_name)
+      ?? normalizeClaim(decodedPayload.first_name)
+      ?? normalizeClaim(decodedPayload.firstName);
+
+    const lastName = normalizeClaim(decodedPayload.family_name)
+      ?? normalizeClaim(decodedPayload.last_name)
+      ?? normalizeClaim(decodedPayload.lastName);
+
+    const fullName = normalizeClaim(decodedPayload.name)
+      ?? ([firstName, lastName].filter(Boolean).join(' ') || undefined);
+
+    return {
+      email,
+      role,
+      storeName,
+      firstName,
+      lastName,
+      fullName,
+      needsProfileName: !firstName || !lastName
+    };
   } catch {
     return null;
   }
@@ -70,6 +97,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     session,
     login: async (email: string, password: string) => {
       const tokens = await posApi.login(email, password);
+      localStorage.setItem('pos.accessToken', tokens.accessToken);
+      setSession(readSessionFromToken());
+    },
+    completeProfileName: async (firstName: string, lastName: string) => {
+      const tokens = await posApi.updateProfileName(firstName, lastName);
       localStorage.setItem('pos.accessToken', tokens.accessToken);
       setSession(readSessionFromToken());
     },

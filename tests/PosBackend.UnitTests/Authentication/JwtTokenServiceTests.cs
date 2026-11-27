@@ -107,4 +107,52 @@ public class JwtTokenServiceTests
         storeNameClaim.Should().NotBeNull();
         storeNameClaim!.Value.Should().Be("Downtown Supermarket");
     }
+
+    [Fact]
+    public void CreateTokens_WhenUserNamesAreNull_ShouldSucceedWithoutNameClaims()
+    {
+        // Arrange
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Email = "legacy@example.com",
+            FirstName = null,
+            LastName = null,
+            Role = UserRole.Cashier,
+            StoreId = Guid.NewGuid()
+        };
+
+        // Act
+        var tokenResponse = _tokenService.CreateTokens(user);
+
+        // Assert
+        var parsedAccessToken = new JwtSecurityTokenHandler().ReadJwtToken(tokenResponse.AccessToken);
+        parsedAccessToken.Claims.Should().NotContain(c => c.Type == JwtRegisteredClaimNames.GivenName);
+        parsedAccessToken.Claims.Should().NotContain(c => c.Type == JwtRegisteredClaimNames.FamilyName);
+        parsedAccessToken.Claims.Should().NotContain(c => c.Type == JwtRegisteredClaimNames.Name);
+    }
+
+    [Fact]
+    public void CreateTokens_WhenUserNamesArePresent_ShouldIncludeNameClaims()
+    {
+        // Arrange
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Email = "cashier@example.com",
+            FirstName = "Asha",
+            LastName = "Rao",
+            Role = UserRole.Cashier,
+            StoreId = Guid.NewGuid()
+        };
+
+        // Act
+        var tokenResponse = _tokenService.CreateTokens(user);
+
+        // Assert
+        var parsedAccessToken = new JwtSecurityTokenHandler().ReadJwtToken(tokenResponse.AccessToken);
+        parsedAccessToken.Claims.First(c => c.Type == JwtRegisteredClaimNames.GivenName).Value.Should().Be("Asha");
+        parsedAccessToken.Claims.First(c => c.Type == JwtRegisteredClaimNames.FamilyName).Value.Should().Be("Rao");
+        parsedAccessToken.Claims.First(c => c.Type == JwtRegisteredClaimNames.Name).Value.Should().Be("Asha Rao");
+    }
 }

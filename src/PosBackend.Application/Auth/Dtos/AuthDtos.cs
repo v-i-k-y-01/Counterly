@@ -8,7 +8,18 @@ namespace PosBackend.Application.Auth.Dtos;
 /// <param name="Role">The role assigned to the user (e.g. Owner, Cashier).</param>
 /// <param name="StoreId">The unique identifier of the store the user belongs to.</param>
 /// <param name="CreatedAt">The date and time when the user was created.</param>
-public sealed record UserResponse(Guid Id, string Email, string Role, Guid StoreId, DateTime CreatedAt, string? StoreName = null);
+/// <param name="StoreName">Optional name of the store.</param>
+/// <param name="FirstName">Optional first name of the user.</param>
+/// <param name="LastName">Optional last name of the user.</param>
+public sealed record UserResponse(
+    Guid Id,
+    string Email,
+    string Role,
+    Guid StoreId,
+    DateTime CreatedAt,
+    string? StoreName = null,
+    string? FirstName = null,
+    string? LastName = null);
 
 /// <summary>
 /// Data transfer object carrying access and refresh tokens returned after authentication.
